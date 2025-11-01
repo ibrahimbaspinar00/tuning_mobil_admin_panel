@@ -1,0 +1,36 @@
+name: tuning_admin_panel
+description: "Tuning App Admin Panel - Web Yönetim Paneli"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+  
+  # Firebase dependencies
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
+  firebase_storage: ^12.3.2
+  cloud_functions: ^5.6.2
+  
+  # HTTP requests
+  http: ^1.2.2
+  
+  # Image picker (optional - for mobile admin panel)
+  image_picker: ^1.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
