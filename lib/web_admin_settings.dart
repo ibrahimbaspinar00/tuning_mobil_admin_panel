@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/permission_service.dart';
 import 'services/admin_service.dart';
+import 'services/gmail_smtp_service.dart';
+import 'services/sendgrid_free_service.dart';
 
 class WebAdminSettings extends StatefulWidget {
   const WebAdminSettings({super.key});
@@ -31,11 +34,39 @@ class _WebAdminSettingsState extends State<WebAdminSettings> {
   
   // Kullanıcı adı değiştirme
   final _usernameController = TextEditingController();
+  
+  // FCM Server Key
+  final _fcmServerKeyController = TextEditingController();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  bool _showFcmKey = false;
+  
+  // Gmail SMTP Ayarları
+  final _gmailUsernameController = TextEditingController();
+  final _gmailAppPasswordController = TextEditingController();
+  bool _showGmailPassword = false;
+  
+  // SendGrid Ayarları
+  final _sendGridApiKeyController = TextEditingController();
+  final _sendGridSenderEmailController = TextEditingController();
+  bool _showSendGridKey = false;
 
   @override
   void initState() {
     super.initState();
     _loadSettings();
+    _loadFcmServerKey();
+    _loadGmailCredentials();
+    _loadSendGridCredentials();
+  }
+
+  @override
+  void dispose() {
+    _fcmServerKeyController.dispose();
+    _gmailUsernameController.dispose();
+    _gmailAppPasswordController.dispose();
+    _sendGridApiKeyController.dispose();
+    _sendGridSenderEmailController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadSettings() async {
@@ -53,6 +84,178 @@ class _WebAdminSettingsState extends State<WebAdminSettings> {
     }
   }
 
+  Future<void> _loadFcmServerKey() async {
+    try {
+      final settingsDoc = await _firestore.collection('admin_settings').doc('system_settings').get();
+      if (settingsDoc.exists) {
+        final data = settingsDoc.data();
+        if (data?['fcmServerKey'] != null) {
+          _fcmServerKeyController.text = data!['fcmServerKey'].toString();
+        }
+      }
+    } catch (e) {
+      debugPrint('FCM Server Key yüklenirken hata: $e');
+    }
+  }
+
+  Future<void> _saveFcmServerKey() async {
+    try {
+      await _firestore.collection('admin_settings').doc('system_settings').set({
+        'fcmServerKey': _fcmServerKeyController.text.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('FCM Server Key başarıyla kaydedildi!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('FCM Server Key kaydedilemedi: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadGmailCredentials() async {
+    try {
+      final settingsDoc = await _firestore.collection('admin_settings').doc('system_settings').get();
+      if (settingsDoc.exists) {
+        final data = settingsDoc.data();
+        if (data?['gmailUsername'] != null) {
+          _gmailUsernameController.text = data!['gmailUsername'].toString();
+        }
+        if (data?['gmailAppPassword'] != null) {
+          _gmailAppPasswordController.text = data!['gmailAppPassword'].toString();
+        }
+      }
+    } catch (e) {
+      debugPrint('Gmail SMTP ayarları yüklenirken hata: $e');
+    }
+  }
+
+  Future<void> _saveGmailCredentials() async {
+    if (_gmailUsernameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Gmail adresi boş olamaz'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (_gmailAppPasswordController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Gmail App Password boş olamaz'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final success = await GmailSMTPService.saveCredentials(
+        _gmailUsernameController.text.trim(),
+        _gmailAppPasswordController.text.trim(),
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success 
+                ? 'Gmail SMTP ayarları başarıyla kaydedildi!'
+                : 'Gmail SMTP ayarları kaydedilemedi'),
+            backgroundColor: success ? Colors.green : Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Gmail SMTP ayarları kaydedilirken hata: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _loadSendGridCredentials() async {
+    try {
+      final settingsDoc = await _firestore.collection('admin_settings').doc('system_settings').get();
+      if (settingsDoc.exists) {
+        final data = settingsDoc.data();
+        if (data?['sendGridApiKey'] != null) {
+          _sendGridApiKeyController.text = data!['sendGridApiKey'].toString();
+        }
+        if (data?['sendGridSenderEmail'] != null) {
+          _sendGridSenderEmailController.text = data!['sendGridSenderEmail'].toString();
+        }
+      }
+    } catch (e) {
+      debugPrint('SendGrid ayarları yüklenirken hata: $e');
+    }
+  }
+
+  Future<void> _saveSendGridCredentials() async {
+    if (_sendGridApiKeyController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('SendGrid API Key boş olamaz'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (_sendGridSenderEmailController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('SendGrid Sender Email boş olamaz'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final success = await SendGridFreeService.saveCredentials(
+        _sendGridApiKeyController.text.trim(),
+        _sendGridSenderEmailController.text.trim(),
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(success 
+                ? 'SendGrid ayarları başarıyla kaydedildi!'
+                : 'SendGrid ayarları kaydedilemedi'),
+            backgroundColor: success ? Colors.green : Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('SendGrid ayarları kaydedilirken hata: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -132,6 +335,18 @@ class _WebAdminSettingsState extends State<WebAdminSettings> {
 
                   // Bildirim Ayarları Kartı
                   _buildNotificationSettingsCard(),
+                  const SizedBox(height: 24),
+
+                  // FCM Server Key Kartı
+                  _buildFcmServerKeyCard(),
+                  const SizedBox(height: 24),
+
+                  // Gmail SMTP Ayarları Kartı
+                  _buildGmailSmtpCard(),
+                  const SizedBox(height: 24),
+
+                  // SendGrid Ayarları Kartı
+                  _buildSendGridCard(),
                   const SizedBox(height: 24),
 
                   // Hakkında Kartı
@@ -486,6 +701,341 @@ class _WebAdminSettingsState extends State<WebAdminSettings> {
                 value: _emailNotification,
                 onChanged: (value) => _toggleEmailNotification(),
                 activeThumbColor: Colors.purple[600],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFcmServerKeyCard() {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.cloud_upload, color: Colors.purple[600], size: 24),
+                const SizedBox(width: 12),
+                Text(
+                  'FCM Push Notification Ayarları',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.purple[800],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.blue[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'FCM Server Key Nasıl Alınır?',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.blue[900],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '⚠️ ÖNEMLİ: Firebase artık Server Key\'i kaldırdı!\n\n'
+                    'Çözüm 1 - Legacy Server Key (Hala çalışıyorsa):\n'
+                    '1. Firebase Console > Project Settings > Cloud Messaging\n'
+                    '2. Eğer "Server key" görünüyorsa kopyalayın\n'
+                    '3. Yoksa aşağıdaki Çözüm 2\'yi kullanın\n\n'
+                    'Çözüm 2 - Service Account (Önerilen):\n'
+                    '1. Firebase Console > Project Settings > Service Accounts\n'
+                    '2. "Generate new private key" butonuna tıklayın\n'
+                    '3. İndirilen JSON dosyasını masaüstüne kaydedin\n'
+                    '4. Service Account aktif - bildirimler Firestore üzerinden gönderilecek',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.blue[800],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            TextField(
+              controller: _fcmServerKeyController,
+              obscureText: !_showFcmKey,
+              decoration: InputDecoration(
+                labelText: 'FCM Server Key',
+                hintText: 'AAAA...',
+                prefixIcon: const Icon(Icons.vpn_key),
+                suffixIcon: IconButton(
+                  icon: Icon(_showFcmKey ? Icons.visibility : Icons.visibility_off),
+                  onPressed: () => setState(() => _showFcmKey = !_showFcmKey),
+                ),
+                border: const OutlineInputBorder(),
+                helperText: 'Push notification göndermek için gerekli',
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            ElevatedButton.icon(
+              onPressed: _fcmServerKeyController.text.trim().isEmpty ? null : _saveFcmServerKey,
+              icon: const Icon(Icons.save),
+              label: const Text('FCM Server Key Kaydet'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.purple[600],
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGmailSmtpCard() {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.email, color: Colors.purple[600], size: 24),
+                const SizedBox(width: 12),
+                Text(
+                  'Gmail SMTP Ayarları',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.purple[800],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.green[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.green[700], size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Gmail App Password Nasıl Alınır?',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green[900],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '1. Google hesabınıza giriş yapın\n'
+                    '2. Google Hesap Ayarları > Güvenlik\n'
+                    '3. "2 Adımlı Doğrulama" özelliğini açın (gerekirse)\n'
+                    '4. "Uygulama şifreleri" bölümüne gidin\n'
+                    '5. "Uygulama seç" > "E-posta" seçin\n'
+                    '6. "Cihaz seç" > "Diğer (Özel ad)" yazın\n'
+                    '7. "Oluştur" butonuna tıklayın\n'
+                    '8. 16 haneli şifreyi kopyalayın ve aşağıya yapıştırın\n\n'
+                    '⚠️ ÖNEMLİ: Normal Gmail şifrenizi değil, App Password kullanın!',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.green[800],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            TextField(
+              controller: _gmailUsernameController,
+              decoration: const InputDecoration(
+                labelText: 'Gmail Adresi',
+                hintText: 'example@gmail.com',
+                prefixIcon: Icon(Icons.email_outlined),
+                border: OutlineInputBorder(),
+                helperText: 'Email göndermek için kullanılacak Gmail adresi',
+              ),
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 16),
+            
+            TextField(
+              controller: _gmailAppPasswordController,
+              obscureText: !_showGmailPassword,
+              decoration: InputDecoration(
+                labelText: 'Gmail App Password',
+                hintText: '16 haneli şifre',
+                prefixIcon: const Icon(Icons.vpn_key),
+                suffixIcon: IconButton(
+                  icon: Icon(_showGmailPassword ? Icons.visibility : Icons.visibility_off),
+                  onPressed: () => setState(() => _showGmailPassword = !_showGmailPassword),
+                ),
+                border: const OutlineInputBorder(),
+                helperText: 'Gmail App Password (16 haneli)',
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            ElevatedButton.icon(
+              onPressed: _gmailUsernameController.text.trim().isEmpty || 
+                        _gmailAppPasswordController.text.trim().isEmpty 
+                  ? null 
+                  : _saveGmailCredentials,
+              icon: const Icon(Icons.save),
+              label: const Text('Gmail SMTP Ayarlarını Kaydet'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.purple[600],
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSendGridCard() {
+    return Card(
+      elevation: 4,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.send, color: Colors.purple[600], size: 24),
+                const SizedBox(width: 12),
+                Text(
+                  'SendGrid Ayarları',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.purple[800],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.orange[700], size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'SendGrid API Key Nasıl Alınır?',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange[900],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '1. SendGrid hesabı oluşturun (ücretsiz plan: 100 email/gün)\n'
+                    '2. SendGrid Dashboard > Settings > API Keys\n'
+                    '3. "Create API Key" butonuna tıklayın\n'
+                    '4. API Key adı verin (örn: "Admin Panel")\n'
+                    '5. "Full Access" veya "Mail Send" izni verin\n'
+                    '6. Oluşturulan API Key\'i kopyalayın ve aşağıya yapıştırın\n'
+                    '7. Sender Email: SendGrid\'de doğrulanmış email adresiniz\n\n'
+                    '⚠️ ÖNEMLİ: Sender Email SendGrid\'de doğrulanmış olmalı!',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.orange[800],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            TextField(
+              controller: _sendGridApiKeyController,
+              obscureText: !_showSendGridKey,
+              decoration: InputDecoration(
+                labelText: 'SendGrid API Key',
+                hintText: 'SG.xxxxxxxxxxxxx',
+                prefixIcon: const Icon(Icons.vpn_key),
+                suffixIcon: IconButton(
+                  icon: Icon(_showSendGridKey ? Icons.visibility : Icons.visibility_off),
+                  onPressed: () => setState(() => _showSendGridKey = !_showSendGridKey),
+                ),
+                border: const OutlineInputBorder(),
+                helperText: 'SendGrid API Key (SG. ile başlar)',
+              ),
+            ),
+            const SizedBox(height: 16),
+            
+            TextField(
+              controller: _sendGridSenderEmailController,
+              decoration: const InputDecoration(
+                labelText: 'Sender Email',
+                hintText: 'noreply@yourdomain.com',
+                prefixIcon: Icon(Icons.email_outlined),
+                border: OutlineInputBorder(),
+                helperText: 'SendGrid\'de doğrulanmış gönderen email adresi',
+              ),
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 16),
+            
+            ElevatedButton.icon(
+              onPressed: _sendGridApiKeyController.text.trim().isEmpty || 
+                        _sendGridSenderEmailController.text.trim().isEmpty 
+                  ? null 
+                  : _saveSendGridCredentials,
+              icon: const Icon(Icons.save),
+              label: const Text('SendGrid Ayarlarını Kaydet'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.purple[600],
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               ),
             ),
           ],

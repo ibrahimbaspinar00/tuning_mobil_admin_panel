@@ -4,17 +4,24 @@ class PermissionService {
   static String? _currentUserRole;
   static List<String> _currentUserPermissions = [];
   static String? _currentUserName;
+  static String? _currentUserId;
 
   // Mevcut kullanıcı bilgilerini ayarla
-  static void setCurrentUser(String role, List<String> permissions, {String? username}) {
+  static void setCurrentUser(String role, List<String> permissions, {String? username, String? userId}) {
     _currentUserRole = role;
     _currentUserPermissions = permissions;
     _currentUserName = username;
+    _currentUserId = userId;
+  }
+  
+  // Mevcut kullanıcı ID'sini al
+  static String? getCurrentUserId() {
+    return _currentUserId;
   }
 
   // Kullanıcının belirli bir yetkisi var mı kontrol et
   static bool hasPermission(String permission) {
-    if (_currentUserRole == 'admin') {
+    if (_isAdmin()) {
       return true; // Admin tüm yetkilere sahip
     }
     return _currentUserPermissions.contains(permission);
@@ -45,61 +52,65 @@ class PermissionService {
     return _currentUserRole == UserRole.guest;
   }
 
-  // Basit yetki kontrolleri
+  // Basit yetki kontrolleri (büyük/küçük harf duyarsız)
+  static bool _isAdmin() {
+    return _currentUserRole != null && _currentUserRole!.toLowerCase() == 'admin';
+  }
+
   static bool canViewProducts() {
-    return _currentUserRole == 'admin' || _currentUserPermissions.contains('view_products');
+    return _isAdmin() || _currentUserPermissions.contains('view_products');
   }
 
   static bool canCreateProducts() {
-    return _currentUserRole == 'admin';
+    return _isAdmin();
   }
 
   static bool canUpdateProducts() {
-    return _currentUserRole == 'admin';
+    return _isAdmin();
   }
 
   static bool canDeleteProducts() {
-    return _currentUserRole == 'admin';
+    return _isAdmin();
   }
 
   static bool canViewStock() {
-    return _currentUserRole == 'admin' || _currentUserPermissions.contains('view_stock');
+    return _isAdmin() || _currentUserPermissions.contains('view_stock');
   }
 
   static bool canUpdateStock() {
-    return _currentUserRole == 'admin';
+    return _isAdmin();
   }
 
   static bool canViewUsers() {
-    return _currentUserRole == 'admin';
+    return _isAdmin();
   }
 
   static bool canCreateUsers() {
-    return _currentUserRole == 'admin';
+    return _isAdmin();
   }
 
   static bool canUpdateUsers() {
-    return _currentUserRole == 'admin';
+    return _isAdmin();
   }
 
   static bool canDeleteUsers() {
-    return _currentUserRole == 'admin';
+    return _isAdmin();
   }
 
   static bool canViewReports() {
-    return _currentUserRole == 'admin';
+    return _isAdmin();
   }
 
   static bool canExportReports() {
-    return _currentUserRole == 'admin';
+    return _isAdmin();
   }
 
   static bool canAccessSettings() {
-    return _currentUserRole == 'admin';
+    return _isAdmin();
   }
 
   static bool canAccessBackup() {
-    return _currentUserRole == 'admin';
+    return _isAdmin();
   }
 
   // Kullanıcının tüm yetkilerini getir

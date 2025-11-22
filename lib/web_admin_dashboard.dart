@@ -12,6 +12,8 @@ import 'web_admin_price_management.dart';
 import 'web_admin_notifications.dart';
 import 'web_admin_main.dart';
 import 'services/permission_service.dart';
+import 'services/theme_service.dart';
+import 'services/app_theme.dart';
 import 'admin_review_management.dart';
 import 'web_admin_profile.dart';
 import 'web_admin_mobile_users.dart';
@@ -26,6 +28,32 @@ class WebAdminDashboard extends StatefulWidget {
 class _WebAdminDashboardState extends State<WebAdminDashboard> {
   int _selectedIndex = 0;
   bool _sidebarCollapsed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadThemePreference();
+  }
+
+  Future<void> _loadThemePreference() async {
+    // Build tamamlandıktan sonra tema yükle
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        final userId = PermissionService.getCurrentUserId();
+        if (userId != null && mounted) {
+          final darkMode = await ThemeService.getDarkMode(userId);
+          if (mounted) {
+            final appTheme = AppTheme.of(context);
+            if (appTheme != null) {
+              appTheme.onThemeChanged(darkMode);
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Tema tercihi yüklenirken hata: $e');
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -744,13 +772,19 @@ class WebDashboardHome extends StatelessWidget {
         }
         
         final stats = snapshot.data ?? {};
+        
+        // Trend değerlerini al
+        final productTrend = (stats['productTrend'] as double?) ?? 0.0;
+        final orderTrend = (stats['orderTrend'] as double?) ?? 0.0;
+        final revenueTrend = (stats['revenueTrend'] as double?) ?? 0.0;
+        
         final cards = [
           _StatCard(
             title: 'Toplam Ürün',
             value: (stats['totalProducts'] ?? 0).toString(),
             icon: Icons.inventory_2_rounded,
             color: const Color(0xFF3B82F6),
-            trend: '+12%',
+            trend: _formatTrend(productTrend),
           ),
           _StatCard(
             title: 'Düşük Stok',
@@ -770,7 +804,7 @@ class WebDashboardHome extends StatelessWidget {
             value: (stats['totalOrders'] ?? 0).toString(),
             icon: Icons.shopping_bag_rounded,
             color: const Color(0xFF8B5CF6),
-            trend: '+${((stats['totalOrders'] ?? 0) * 0.15).toStringAsFixed(0)}%',
+            trend: _formatTrend(orderTrend),
           ),
           _StatCard(
             title: 'Bekleyen',
@@ -783,7 +817,7 @@ class WebDashboardHome extends StatelessWidget {
             value: '₺${(stats['totalRevenue'] ?? 0.0).toStringAsFixed(0)}',
             icon: Icons.attach_money_rounded,
             color: const Color(0xFF10B981),
-            trend: '+8%',
+            trend: _formatTrend(revenueTrend),
           ),
         ];
         
@@ -876,17 +910,67 @@ class WebDashboardHome extends StatelessWidget {
     try {
       final adminService = AdminService();
       
+      // Mevcut dönem (bu ay)
+      final now = DateTime.now();
+      final currentMonthStart = DateTime(now.year, now.month, 1);
+      final currentMonthEnd = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+      
+      // Önceki dönem (geçen ay)
+      final lastMonthStart = DateTime(now.year, now.month - 1, 1);
+      final lastMonthEnd = DateTime(now.year, now.month, 0, 23, 59, 59);
+      
+      // Tüm ürünleri al
       final products = await adminService.getProducts().first;
       final validProducts = products.cast<AdminProduct>().toList();
+      
+      // Mevcut dönem ürün sayısı
       int totalProducts = validProducts.length;
+      int currentMonthProducts = validProducts.where((p) => 
+        p.createdAt.isAfter(currentMonthStart.subtract(const Duration(days: 1))) &&
+        p.createdAt.isBefore(currentMonthEnd.add(const Duration(days: 1)))
+      ).length;
+      
+      // Önceki dönem ürün sayısı
+      int lastMonthProducts = validProducts.where((p) => 
+        p.createdAt.isAfter(lastMonthStart.subtract(const Duration(days: 1))) &&
+        p.createdAt.isBefore(lastMonthEnd.add(const Duration(days: 1)))
+      ).length;
+      
+      // Ürün trend hesaplama
+      double productTrend = _calculateTrend(currentMonthProducts.toDouble(), lastMonthProducts.toDouble());
+      
       int lowStockProducts = validProducts.where((p) => p.stock < 10).length;
       int activeProducts = validProducts.where((p) => p.isActive).length;
       
+      // Siparişler
       final orders = await adminService.getOrders().first;
       final validOrders = orders.whereType<OrderModel.Order>().toList();
+      
+      // Mevcut dönem siparişleri
+      final currentMonthOrders = validOrders.where((o) => 
+        o.orderDate.isAfter(currentMonthStart.subtract(const Duration(days: 1))) &&
+        o.orderDate.isBefore(currentMonthEnd.add(const Duration(days: 1)))
+      ).toList();
+      
+      // Önceki dönem siparişleri
+      final lastMonthOrders = validOrders.where((o) => 
+        o.orderDate.isAfter(lastMonthStart.subtract(const Duration(days: 1))) &&
+        o.orderDate.isBefore(lastMonthEnd.add(const Duration(days: 1)))
+      ).toList();
+      
       int totalOrders = validOrders.length;
       int pendingOrders = validOrders.where((o) => o.status == 'pending').length;
+      
+      // Sipariş trend hesaplama
+      double orderTrend = _calculateTrend(currentMonthOrders.length.toDouble(), lastMonthOrders.length.toDouble());
+      
+      // Gelir hesaplama
       double totalRevenue = validOrders.fold(0.0, (sum, order) => sum + order.totalAmount);
+      double currentMonthRevenue = currentMonthOrders.fold(0.0, (sum, order) => sum + order.totalAmount);
+      double lastMonthRevenue = lastMonthOrders.fold(0.0, (sum, order) => sum + order.totalAmount);
+      
+      // Gelir trend hesaplama
+      double revenueTrend = _calculateTrend(currentMonthRevenue, lastMonthRevenue);
       
       return {
         'totalProducts': totalProducts,
@@ -895,9 +979,33 @@ class WebDashboardHome extends StatelessWidget {
         'totalOrders': totalOrders,
         'pendingOrders': pendingOrders,
         'totalRevenue': totalRevenue,
+        'productTrend': productTrend,
+        'orderTrend': orderTrend,
+        'revenueTrend': revenueTrend,
       };
     } catch (e) {
+      debugPrint('Dashboard istatistikleri yüklenirken hata: $e');
       return {};
+    }
+  }
+  
+  // Trend hesaplama (yüzde değişim)
+  double _calculateTrend(double current, double previous) {
+    if (previous == 0) {
+      // Önceki dönem veri yoksa, mevcut veri varsa %100 artış
+      return current > 0 ? 100.0 : 0.0;
+    }
+    return ((current - previous) / previous) * 100;
+  }
+  
+  // Trend string formatı
+  String _formatTrend(double trend) {
+    if (trend > 0) {
+      return '+${trend.toStringAsFixed(1)}%';
+    } else if (trend < 0) {
+      return '${trend.toStringAsFixed(1)}%';
+    } else {
+      return '0%';
     }
   }
 }
@@ -949,24 +1057,33 @@ class _StatCard extends StatelessWidget {
                 child: Icon(icon, color: color, size: 24),
               ),
               if (trend != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: trend!.contains('+') || trend == '✓ Yeterli'
-                      ? const Color(0xFF10B981).withValues(alpha: 0.1)
-                      : const Color(0xFFF59E0B).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    trend!,
-                    style: TextStyle(
-                      color: trend!.contains('+') || trend == '✓ Yeterli'
-                        ? const Color(0xFF10B981)
-                        : const Color(0xFFF59E0B),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                Builder(
+                  builder: (context) {
+                    final trendValue = trend!;
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: (trendValue.contains('+') || trendValue == '✓ Yeterli')
+                          ? const Color(0xFF10B981).withValues(alpha: 0.1)
+                          : (trendValue.contains('-'))
+                            ? const Color(0xFFEF4444).withValues(alpha: 0.1)
+                            : const Color(0xFFF59E0B).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        trendValue,
+                        style: TextStyle(
+                          color: (trendValue.contains('+') || trendValue == '✓ Yeterli')
+                            ? const Color(0xFF10B981)
+                            : (trendValue.contains('-'))
+                              ? const Color(0xFFEF4444)
+                              : const Color(0xFFF59E0B),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    );
+                  },
                 ),
             ],
           ),

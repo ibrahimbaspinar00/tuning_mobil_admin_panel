@@ -705,12 +705,18 @@ class AdminService {
   Stream<List<AdminUser>> getUsers() {
     return _firestore
         .collection('admin_users')
-        .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        return AdminUser.fromFirestore(doc.data(), doc.id);
-      }).toList();
+      final users = snapshot.docs.map((doc) {
+        try {
+          return AdminUser.fromFirestore(doc.data(), doc.id);
+        } catch (e) {
+          debugPrint('⚠️ Admin kullanıcı parse hatası: $e');
+          return null;
+        }
+      }).whereType<AdminUser>().toList();
+      users.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return users;
     });
   }
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'model/mobile_user.dart';
 import 'services/mobile_user_service.dart';
+import 'services/fcm_service.dart';
 
 class WebAdminMobileUsers extends StatefulWidget {
   const WebAdminMobileUsers({super.key});
@@ -11,9 +12,11 @@ class WebAdminMobileUsers extends StatefulWidget {
 
 class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
   final MobileUserService _userService = MobileUserService();
+  final FCMService _fcmService = FCMService();
   final TextEditingController _searchController = TextEditingController();
   
   String _searchQuery = '';
+  String _selectedStatus = 'Tümü';
   int _totalUsers = 0;
   double _totalBalance = 0.0;
 
@@ -45,96 +48,134 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
       backgroundColor: const Color(0xFFF8FAFC),
       body: Column(
         children: [
-          // Üst Bar
+          // Header
           Container(
             padding: const EdgeInsets.all(24),
-            color: Colors.white,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
             child: Column(
               children: [
                 Row(
                   children: [
-                    const Text(
-                      'Mobil Kullanıcılar',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF1E293B),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Mobil Kullanıcılar',
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF1E293B),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Mobil uygulama kullanıcılarını yönetin',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const Spacer(),
-                    // İstatistikler
-                    _buildStatCard('Toplam Kullanıcı', '$_totalUsers', Icons.people, const Color(0xFF3B82F6)),
+                    // Statistics
+                    _buildStatCard(
+                      'Toplam Kullanıcı',
+                      '$_totalUsers',
+                      Icons.people,
+                      const Color(0xFF3B82F6),
+                    ),
                     const SizedBox(width: 16),
-                    _buildStatCard('Toplam Bakiye', '₺${_totalBalance.toStringAsFixed(2)}', Icons.account_balance_wallet, const Color(0xFF10B981)),
+                    _buildStatCard(
+                      'Toplam Bakiye',
+                      '₺${_totalBalance.toStringAsFixed(2)}',
+                      Icons.account_balance_wallet,
+                      const Color(0xFF10B981),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                // Arama
-                TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Kullanıcı adı, e-posta, telefon ile ara...',
-                    prefixIcon: const Icon(Icons.search),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              setState(() {
-                                _searchQuery = '';
-                                _searchController.clear();
-                              });
-                            },
-                          )
-                        : null,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                const SizedBox(height: 24),
+                // Search and Filters
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText: 'Kullanıcı adı, e-posta, telefon ile ara...',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: _searchQuery.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear),
+                                  onPressed: () {
+                                    setState(() {
+                                      _searchQuery = '';
+                                      _searchController.clear();
+                                    });
+                                  },
+                                )
+                              : null,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          filled: true,
+                          fillColor: Colors.grey[50],
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _searchQuery = value;
+                          });
+                        },
+                      ),
                     ),
-                    filled: true,
-                    fillColor: Colors.grey[50],
-                  ),
-                  onChanged: (value) {
-                    setState(() {
-                      _searchQuery = value;
-                    });
-                  },
+                    const SizedBox(width: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey[300]!),
+                      ),
+                      child: DropdownButton<String>(
+                        value: _selectedStatus,
+                        underline: const SizedBox(),
+                        items: const [
+                          DropdownMenuItem(value: 'Tümü', child: Text('Tüm Durumlar')),
+                          DropdownMenuItem(value: 'Aktif', child: Text('Aktif')),
+                          DropdownMenuItem(value: 'Pasif', child: Text('Pasif')),
+                          DropdownMenuItem(value: 'Dondurulmuş', child: Text('Dondurulmuş')),
+                        ],
+                        onChanged: (value) {
+                          setState(() {
+                            _selectedStatus = value!;
+                          });
+                        },
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
 
-          // Kullanıcı Listesi
+          // User List
           Expanded(
-            child: _searchQuery.isEmpty
-                ? StreamBuilder<List<MobileUser>>(
-                    stream: _userService.getUsers(),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      if (snapshot.hasError) {
-                        return Center(child: Text('Hata: ${snapshot.error}'));
-                      }
-                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                        return const Center(child: Text('Kullanıcı bulunamadı'));
-                      }
-                      return _buildUserList(snapshot.data!);
-                    },
-                  )
-                : FutureBuilder<List<MobileUser>>(
-                    future: _userService.searchUsers(_searchQuery),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      if (snapshot.hasError) {
-                        return Center(child: Text('Hata: ${snapshot.error}'));
-                      }
-                      if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                        return const Center(child: Text('Sonuç bulunamadı'));
-                      }
-                      return _buildUserList(snapshot.data!);
-                    },
-                  ),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: _searchQuery.isEmpty
+                  ? _buildUserStream()
+                  : _buildSearchResults(),
+            ),
           ),
         ],
       ),
@@ -143,7 +184,7 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
 
   Widget _buildStatCard(String label, String value, IconData icon, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
@@ -151,7 +192,7 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
       ),
       child: Row(
         children: [
-          Icon(icon, color: color, size: 24),
+          Icon(icon, color: color, size: 28),
           const SizedBox(width: 12),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -166,7 +207,7 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
               Text(
                 value,
                 style: TextStyle(
-                  fontSize: 16,
+                  fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: color,
                 ),
@@ -178,13 +219,249 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
     );
   }
 
-  Widget _buildUserList(List<MobileUser> users) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
+  Widget _buildUserStream() {
+    return StreamBuilder<List<MobileUser>>(
+      stream: _userService.getUsers(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          final error = snapshot.error.toString();
+          final isPermissionError = error.contains('permission-denied') || 
+                                   error.contains('permission denied') ||
+                                   error.contains('Missing or insufficient permissions');
+          
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+                  const SizedBox(height: 16),
+                  Text(
+                    isPermissionError 
+                        ? 'Firebase İzin Hatası'
+                        : 'Kullanıcılar yüklenirken hata oluştu',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red[600],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (isPermissionError) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.orange[50],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange[300]!),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.info_outline, color: Colors.orange[700]),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Çözüm Adımları:',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.orange[900],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            '1. Firebase Console\'a gidin (https://console.firebase.google.com)',
+                            style: TextStyle(color: Colors.orange[900]),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '2. Projenizi seçin',
+                            style: TextStyle(color: Colors.orange[900]),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '3. Firestore Database > Rules sekmesine gidin',
+                            style: TextStyle(color: Colors.orange[900]),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '4. firestore.rules dosyasındaki kuralları kopyalayıp yapıştırın',
+                            style: TextStyle(color: Colors.orange[900]),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '5. "Publish" butonuna tıklayın',
+                            style: TextStyle(color: Colors.orange[900]),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    Text(
+                      error,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () => setState(() {}),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Tekrar Dene'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.people_outline, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  'Kullanıcı bulunamadı',
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        List<MobileUser> users = snapshot.data!;
+        
+        // Filter by status
+        if (_selectedStatus != 'Tümü') {
+          users = users.where((user) {
+            if (_selectedStatus == 'Aktif') return user.isActive && !user.isFrozen;
+            if (_selectedStatus == 'Pasif') return !user.isActive;
+            if (_selectedStatus == 'Dondurulmuş') return user.isFrozen;
+            return true;
+          }).toList();
+        }
+
+        return _buildUserGrid(users);
+      },
+    );
+  }
+
+  Widget _buildSearchResults() {
+    return FutureBuilder<List<MobileUser>>(
+      future: _userService.searchUsers(_searchQuery),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snapshot.hasError) {
+          final error = snapshot.error.toString();
+          final isPermissionError = error.contains('permission-denied') || 
+                                   error.contains('permission denied') ||
+                                   error.contains('Missing or insufficient permissions');
+          
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+                  const SizedBox(height: 16),
+                  Text(
+                    isPermissionError 
+                        ? 'Firebase İzin Hatası'
+                        : 'Arama sırasında hata oluştu',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red[600],
+                    ),
+                  ),
+                  if (!isPermissionError) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      error,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.search_off, size: 64, color: Colors.grey[400]),
+                const SizedBox(height: 16),
+                Text(
+                  'Sonuç bulunamadı',
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        List<MobileUser> users = snapshot.data!;
+        
+        // Filter by status
+        if (_selectedStatus != 'Tümü') {
+          users = users.where((user) {
+            if (_selectedStatus == 'Aktif') return user.isActive && !user.isFrozen;
+            if (_selectedStatus == 'Pasif') return !user.isActive;
+            if (_selectedStatus == 'Dondurulmuş') return user.isFrozen;
+            return true;
+          }).toList();
+        }
+
+        return _buildUserGrid(users);
+      },
+    );
+  }
+
+  Widget _buildUserGrid(List<MobileUser> users) {
+    return GridView.builder(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+        childAspectRatio: 1.0,
+      ),
       itemCount: users.length,
       itemBuilder: (context, index) {
-        final user = users[index];
-        return _buildUserCard(user);
+        return _buildUserCard(users[index]);
       },
     );
   }
@@ -192,7 +469,6 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
   Widget _buildUserCard(MobileUser user) {
     return Card(
       elevation: 0,
-      margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
@@ -208,109 +484,144 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
         onTap: () => _showUserDetails(user),
         borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Avatar
-              CircleAvatar(
-                radius: 30,
-                backgroundColor: const Color(0xFF6366F1),
-                backgroundImage: user.avatarUrl != null && user.avatarUrl!.isNotEmpty
-                    ? NetworkImage(user.avatarUrl!)
-                    : null,
-                child: user.avatarUrl == null || user.avatarUrl!.isEmpty
-                    ? Text(
-                        (user.fullName?.isNotEmpty == true
-                            ? user.fullName![0].toUpperCase()
-                            : user.email?.isNotEmpty == true
-                                ? user.email![0].toUpperCase()
-                                : 'U'),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 16),
-              
-              // Bilgiler
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          user.fullName ?? user.username ?? user.email ?? 'İsimsiz',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        if (user.isFrozen)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Text(
-                              'DONDURULDU',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 28,
+                    backgroundColor: const Color(0xFF6366F1),
+                    backgroundImage: user.avatarUrl != null && user.avatarUrl!.isNotEmpty
+                        ? NetworkImage(user.avatarUrl!)
+                        : null,
+                    child: user.avatarUrl == null || user.avatarUrl!.isEmpty
+                        ? Text(
+                            (user.fullName?.isNotEmpty == true
+                                ? user.fullName![0].toUpperCase()
+                                : user.email?.isNotEmpty == true
+                                    ? user.email![0].toUpperCase()
+                                    : 'U'),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 20,
                             ),
                           )
-                        else if (!user.isActive)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.grey,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Text(
-                              'PASIF',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    if (user.email != null)
-                      Text(
-                        user.email!,
-                        style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                        : null,
+                  ),
+                  const Spacer(),
+                  PopupMenuButton<String>(
+                    icon: Icon(Icons.more_vert, color: Colors.grey[600]),
+                    onSelected: (value) => _handleMenuAction(value, user),
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit, size: 20),
+                            SizedBox(width: 8),
+                            Text('Düzenle'),
+                          ],
+                        ),
                       ),
-                    if (user.phoneNumber != null)
-                      Text(
-                        user.phoneNumber!,
-                        style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                      const PopupMenuItem(
+                        value: 'balance',
+                        child: Row(
+                          children: [
+                            Icon(Icons.account_balance_wallet, size: 20),
+                            SizedBox(width: 8),
+                            Text('Bakiye İşlemleri'),
+                          ],
+                        ),
                       ),
-                  ],
-                ),
+                      const PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: user.isActive ? 'deactivate' : 'activate',
+                        child: Row(
+                          children: [
+                            Icon(
+                              user.isActive ? Icons.block : Icons.check_circle,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(user.isActive ? 'Pasifleştir' : 'Aktifleştir'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: user.isFrozen ? 'unfreeze' : 'freeze',
+                        child: Row(
+                          children: [
+                            Icon(
+                              user.isFrozen ? Icons.lock_open : Icons.lock,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(user.isFrozen ? 'Donmayı Kaldır' : 'Hesabı Dondur'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: 'close',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                            SizedBox(width: 8),
+                            Text('Hesabı Kapat', style: TextStyle(color: Colors.red)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-
-              // Bakiye
+              const SizedBox(height: 16),
+              Text(
+                user.fullName ?? user.username ?? user.email ?? 'İsimsiz',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1E293B),
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 4),
+              if (user.email != null)
+                Text(
+                  user.email!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[600],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              if (user.phoneNumber != null)
+                Text(
+                  user.phoneNumber!,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: const Color(0xFF10B981).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Column(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       'Bakiye',
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 12,
                         color: Colors.grey[600],
                       ),
                     ),
@@ -325,64 +636,57 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-
-              // İşlemler
-              PopupMenuButton<String>(
-                onSelected: (value) => _handleMenuAction(value, user),
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: 'edit',
-                    child: Row(
-                      children: [
-                        Icon(Icons.edit, size: 20),
-                        SizedBox(width: 8),
-                        Text('Düzenle'),
-                      ],
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  if (user.isFrozen)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'DONDURULDU',
+                        style: TextStyle(
+                          color: Colors.red,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  else if (!user.isActive)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'PASIF',
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'AKTIF',
+                        style: TextStyle(
+                          color: Colors.green,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'balance',
-                    child: Row(
-                      children: [
-                        Icon(Icons.account_balance_wallet, size: 20),
-                        SizedBox(width: 8),
-                        Text('Bakiye İşlemleri'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuDivider(),
-                  PopupMenuItem(
-                    value: user.isActive ? 'deactivate' : 'activate',
-                    child: Row(
-                      children: [
-                        Icon(user.isActive ? Icons.block : Icons.check_circle, size: 20),
-                        const SizedBox(width: 8),
-                        Text(user.isActive ? 'Pasifleştir' : 'Aktifleştir'),
-                      ],
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: user.isFrozen ? 'unfreeze' : 'freeze',
-                    child: Row(
-                      children: [
-                        Icon(user.isFrozen ? Icons.lock_open : Icons.lock, size: 20),
-                        const SizedBox(width: 8),
-                        Text(user.isFrozen ? 'Donmayı Kaldır' : 'Hesabı Dondur'),
-                      ],
-                    ),
-                  ),
-                  const PopupMenuDivider(),
-                  const PopupMenuItem(
-                    value: 'close',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_outline, size: 20, color: Colors.red),
-                        SizedBox(width: 8),
-                        Text('Hesabı Kapat', style: TextStyle(color: Colors.red)),
-                      ],
-                    ),
-                  ),
                 ],
               ),
             ],
@@ -418,7 +722,9 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
     }
   }
 
-  void _showUserDetails(MobileUser user) {
+  Future<void> _showUserDetails(MobileUser user) async {
+    final tokens = await _fcmService.getUserFCMTokens(user.id);
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -438,6 +744,54 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
               _buildDetailRow('Dondurma', user.isFrozen ? 'Dondurulmuş' : 'Normal'),
               _buildDetailRow('Kayıt Tarihi', _formatDate(user.createdAt)),
               if (user.lastLogin != null) _buildDetailRow('Son Giriş', _formatDate(user.lastLogin!)),
+              const Divider(height: 24),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: tokens.isNotEmpty
+                      ? Colors.green.withValues(alpha: 0.1)
+                      : Colors.orange.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: tokens.isNotEmpty
+                        ? Colors.green.withValues(alpha: 0.3)
+                        : Colors.orange.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          tokens.isNotEmpty ? Icons.check_circle : Icons.warning,
+                          color: tokens.isNotEmpty ? Colors.green : Colors.orange,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'FCM Token Durumu',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: tokens.isNotEmpty ? Colors.green : Colors.orange,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    if (tokens.isNotEmpty)
+                      Text(
+                        '✅ ${tokens.length} aktif cihaz bulundu',
+                        style: const TextStyle(fontSize: 12, color: Colors.green),
+                      )
+                    else
+                      Text(
+                        '⚠️ FCM token bulunamadı',
+                        style: TextStyle(fontSize: 12, color: Colors.orange[700]),
+                      ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -460,7 +814,7 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
 
   Widget _buildDetailRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -536,8 +890,13 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
           ),
           ElevatedButton(
             onPressed: () async {
-              await _updateUser(user, emailController.text, phoneController.text,
-                  passwordController.text, nameController.text);
+              await _updateUser(
+                user,
+                emailController.text,
+                phoneController.text,
+                passwordController.text,
+                nameController.text,
+              );
               if (mounted) Navigator.pop(context);
             },
             child: const Text('Kaydet'),
@@ -547,8 +906,22 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
     );
   }
 
-  Future<void> _updateUser(MobileUser user, String email, String phone,
-      String password, String name) async {
+  Future<void> _updateUser(
+    MobileUser user,
+    String email,
+    String phone,
+    String password,
+    String name,
+  ) async {
+    // Loading göster
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
     try {
       final updatedUser = user.copyWith(
         email: email.isNotEmpty ? email : null,
@@ -571,21 +944,35 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
       }
 
       if (mounted) {
+        Navigator.pop(context); // Loading'i kapat
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Kullanıcı başarıyla güncellendi'),
             backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Hata: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        Navigator.pop(context); // Loading'i kapat
+        
+        final errorMsg = e.toString();
+        final isPermissionError = errorMsg.contains('permission-denied') || 
+                                  errorMsg.contains('permission denied') ||
+                                  errorMsg.contains('Missing or insufficient permissions');
+        
+        if (isPermissionError) {
+          _showPermissionErrorDialog();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Hata: ${e.toString()}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
       }
     }
   }
@@ -593,27 +980,43 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
   void _showBalanceDialog(MobileUser user) {
     showDialog(
       context: context,
-      builder: (context) => _BalanceDialog(user: user, userService: _userService),
+      builder: (context) => _BalanceDialog(
+        user: user,
+        userService: _userService,
+      ),
     ).then((_) => _loadStatistics());
   }
 
   Future<void> _activateUser(MobileUser user) async {
+    // Loading göster
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
     try {
       await _userService.toggleUserStatus(user.id, true);
       if (mounted) {
+        Navigator.pop(context); // Loading'i kapat
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Kullanıcı aktifleştirildi'),
             backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
           ),
         );
       }
     } catch (e) {
       if (mounted) {
+        Navigator.pop(context); // Loading'i kapat
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Hata: ${e.toString()}'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -641,22 +1044,35 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
     );
 
     if (confirmed == true) {
+      // Loading göster
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
       try {
         await _userService.toggleUserStatus(user.id, false);
         if (mounted) {
+          Navigator.pop(context); // Loading'i kapat
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Kullanıcı pasifleştirildi'),
               backgroundColor: Colors.orange,
+              duration: Duration(seconds: 2),
             ),
           );
         }
       } catch (e) {
         if (mounted) {
+          Navigator.pop(context); // Loading'i kapat
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Hata: ${e.toString()}'),
               backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
             ),
           );
         }
@@ -692,22 +1108,35 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
     );
 
     if (confirmed == true) {
+      // Loading göster
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
       try {
         await _userService.freezeUser(user.id, freeze);
         if (mounted) {
+          Navigator.pop(context); // Loading'i kapat
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(freeze ? 'Hesap donduruldu' : 'Hesap donması kaldırıldı'),
               backgroundColor: freeze ? Colors.red : Colors.green,
+              duration: const Duration(seconds: 2),
             ),
           );
         }
       } catch (e) {
         if (mounted) {
+          Navigator.pop(context); // Loading'i kapat
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('Hata: ${e.toString()}'),
               backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
             ),
           );
         }
@@ -716,7 +1145,6 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
   }
 
   Future<void> _closeAccount(MobileUser user) async {
-    // İşlem tipini seç
     String? action = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -762,7 +1190,6 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
     if (action == null) return;
 
     if (action == 'delete') {
-      // Silme işlemi için onay
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -795,31 +1222,42 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
       );
 
       if (confirmed == true) {
+        // Loading göster
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+
         try {
           await _userService.deleteUser(user.id);
           if (mounted) {
+            Navigator.pop(context); // Loading'i kapat
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('Hesap başarıyla silindi'),
                 backgroundColor: Colors.green,
+                duration: Duration(seconds: 2),
               ),
             );
-            // İstatistikleri yenile
             _loadStatistics();
           }
         } catch (e) {
           if (mounted) {
+            Navigator.pop(context); // Loading'i kapat
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Hesap silinirken hata oluştu: ${e.toString()}'),
                 backgroundColor: Colors.red,
+                duration: const Duration(seconds: 4),
               ),
             );
           }
         }
       }
     } else if (action == 'deactivate') {
-      // Pasif yapma işlemi
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -842,22 +1280,35 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
       );
 
       if (confirmed == true) {
+        // Loading göster
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+
         try {
           await _userService.deactivateUser(user.id);
           if (mounted) {
+            Navigator.pop(context); // Loading'i kapat
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text('Hesap kapatıldı (pasif yapıldı)'),
                 backgroundColor: Colors.orange,
+                duration: Duration(seconds: 2),
               ),
             );
           }
         } catch (e) {
           if (mounted) {
+            Navigator.pop(context); // Loading'i kapat
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text('Hata: ${e.toString()}'),
                 backgroundColor: Colors.red,
+                duration: const Duration(seconds: 4),
               ),
             );
           }
@@ -868,6 +1319,79 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
 
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  void _showPermissionErrorDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.error, color: Colors.red),
+            SizedBox(width: 8),
+            Text('Firebase İzin Hatası'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Firebase Firestore izinleri yapılandırılmamış. Lütfen aşağıdaki adımları izleyin:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            _buildStep('1', 'Firebase Console\'a gidin (https://console.firebase.google.com)'),
+            _buildStep('2', 'Projenizi seçin'),
+            _buildStep('3', 'Firestore Database > Rules sekmesine gidin'),
+            _buildStep('4', 'firestore.rules dosyasındaki kuralları kopyalayıp yapıştırın'),
+            _buildStep('5', 'Publish butonuna tıklayın'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tamam'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStep(String number, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: const BoxDecoration(
+              color: Colors.blue,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                number,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -943,8 +1467,6 @@ class _BalanceDialogState extends State<_BalanceDialog> {
               ],
             ),
             const SizedBox(height: 24),
-            
-            // İşlem Tipi
             SegmentedButton<String>(
               segments: const [
                 ButtonSegment(
@@ -966,8 +1488,6 @@ class _BalanceDialogState extends State<_BalanceDialog> {
               },
             ),
             const SizedBox(height: 24),
-
-            // Miktar
             TextField(
               controller: _amountController,
               decoration: const InputDecoration(
@@ -978,8 +1498,6 @@ class _BalanceDialogState extends State<_BalanceDialog> {
               keyboardType: TextInputType.number,
             ),
             const SizedBox(height: 16),
-
-            // Not
             TextField(
               controller: _noteController,
               decoration: const InputDecoration(
@@ -990,16 +1508,6 @@ class _BalanceDialogState extends State<_BalanceDialog> {
               maxLines: 3,
             ),
             const SizedBox(height: 24),
-
-            // Bakiye Geçmişi
-            TextButton.icon(
-              onPressed: () => _showBalanceHistory(),
-              icon: const Icon(Icons.history),
-              label: const Text('Bakiye İşlem Geçmişi'),
-            ),
-            const SizedBox(height: 16),
-
-            // Butonlar
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
@@ -1108,98 +1616,6 @@ class _BalanceDialogState extends State<_BalanceDialog> {
         });
       }
     }
-  }
-
-  void _showBalanceHistory() {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        child: Container(
-          width: 600,
-          height: 500,
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Bakiye İşlem Geçmişi',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: StreamBuilder<List<Map<String, dynamic>>>(
-                  stream: widget.userService.getBalanceTransactions(widget.user.id),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (snapshot.hasError) {
-                      return Center(child: Text('Hata: ${snapshot.error}'));
-                    }
-                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                      return const Center(child: Text('İşlem geçmişi bulunamadı'));
-                    }
-
-                    return ListView.builder(
-                      itemCount: snapshot.data!.length,
-                      itemBuilder: (context, index) {
-                        final transaction = snapshot.data![index];
-                        final isDeposit = transaction['type'] == 'deposit';
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          child: ListTile(
-                            leading: Icon(
-                              isDeposit ? Icons.add_circle : Icons.remove_circle,
-                              color: isDeposit ? Colors.green : Colors.red,
-                            ),
-                            title: Text(
-                              isDeposit ? 'Bakiye Yükleme' : 'Bakiye Çekme',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: isDeposit ? Colors.green : Colors.red,
-                              ),
-                            ),
-                            subtitle: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('Miktar: ₺${(transaction['amount'] as num).toStringAsFixed(2)}'),
-                                Text(
-                                  'Önceki: ₺${(transaction['balanceBefore'] as num).toStringAsFixed(2)} → '
-                                  'Sonraki: ₺${(transaction['balanceAfter'] as num).toStringAsFixed(2)}',
-                                ),
-                                if (transaction['note'] != null)
-                                  Text('Not: ${transaction['note']}'),
-                                if (transaction['createdAt'] != null)
-                                  Text(
-                                    'Tarih: ${_formatDate((transaction['createdAt'] as DateTime))}',
-                                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Kapat'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
   }
 }
 

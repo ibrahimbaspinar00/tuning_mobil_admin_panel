@@ -6,9 +6,9 @@ import 'services/permission_service.dart';
 import 'services/admin_settings_service.dart';
 import 'services/admin_service.dart';
 import 'services/email_service.dart';
-import 'services/firebase_email_service.dart';
-import 'services/gmail_smtp_service.dart';
-import 'services/sendgrid_free_service.dart';
+import 'services/app_theme.dart';
+import 'services/audit_log_service.dart';
+import 'services/rate_limit_service.dart';
 
 // Global admin şifre değişkeni
 String adminPassword = 'admin123';
@@ -16,8 +16,21 @@ String adminPassword = 'admin123';
 // Global admin kullanıcı adı değişkeni
 String adminUsername = 'admin';
 
-class WebAdminApp extends StatelessWidget {
+class WebAdminApp extends StatefulWidget {
   const WebAdminApp({super.key});
+
+  @override
+  State<WebAdminApp> createState() => _WebAdminAppState();
+}
+
+class _WebAdminAppState extends State<WebAdminApp> {
+  bool _isDarkMode = false;
+
+  void _updateTheme(bool isDark) {
+    setState(() {
+      _isDarkMode = isDark;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,6 +45,22 @@ class WebAdminApp extends StatelessWidget {
           brightness: Brightness.light,
         ),
       ),
+      darkTheme: ThemeData(
+        primarySwatch: Colors.blue,
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.dark,
+        ),
+      ),
+      themeMode: _isDarkMode ? ThemeMode.dark : ThemeMode.light,
+      builder: (context, child) {
+        return AppTheme(
+          isDarkMode: _isDarkMode,
+          onThemeChanged: _updateTheme,
+          child: child!,
+        );
+      },
       home: const WebAdminLogin(),
     );
   }
@@ -69,7 +98,8 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
   // Firebase'den admin ayarlarını yükle
   Future<void> _loadAdminSettings() async {
     try {
-      final settings = await _adminSettingsService.getAdminSettings();
+      final settings = await _adminSettingsService.getAdminSettings()
+          .timeout(const Duration(seconds: 5));
       if (settings != null) {
         if (mounted) {
           setState(() {
@@ -77,13 +107,28 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
             adminPassword = settings.adminPassword;
           });
         }
-        // Firebase'den admin ayarları yüklendi
+        debugPrint('✅ Firebase\'den admin ayarları yüklendi');
       } else {
         // Varsayılan ayarları oluştur
-        await _adminSettingsService.createDefaultAdminSettings();
-        // Varsayılan admin ayarları oluşturuldu
+        try {
+          await _adminSettingsService.createDefaultAdminSettings()
+              .timeout(const Duration(seconds: 5));
+          debugPrint('✅ Varsayılan admin ayarları oluşturuldu');
+        } catch (e) {
+          debugPrint('⚠️ Varsayılan ayarlar oluşturulamadı: $e');
+        }
+      }
+    } on TimeoutException catch (e) {
+      debugPrint('⚠️ Admin ayarları yükleme timeout: $e');
+      // Varsayılan değerleri kullan
+      if (mounted) {
+        setState(() {
+          adminUsername = 'admin';
+          adminPassword = 'admin123';
+        });
       }
     } catch (e) {
+      debugPrint('⚠️ Admin ayarları yüklenirken hata: $e');
       // Admin ayarları yüklenirken hata - varsayılan değerleri kullan
       if (mounted) {
         setState(() {
@@ -233,28 +278,131 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
     if (_formKey.currentState!.validate()) {
       if (!mounted) return;
       
+      // Rate limiting kontrolü
+      final identifier = _usernameController.text.trim();
+      final rateLimitOk = await RateLimitService.checkRateLimit(
+        identifier: identifier,
+        maxRequests: 5, // 5 dakikada 5 deneme
+        window: const Duration(minutes: 5),
+      );
+      
+      if (!rateLimitOk) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Çok fazla giriş denemesi. Lütfen 5 dakika sonra tekrar deneyin.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+        return;
+      }
+      
       setState(() {
         _isLoading = true;
       });
       
       try {
-        // Her giriş denemesinde Firebase'den admin ayarlarını yükle
-        await _loadAdminSettings();
-        
-        if (!mounted) return;
-        
-        // Debug: Admin bilgilerini konsola yazdır
-        debugPrint('Admin Username: $adminUsername');
-        debugPrint('Admin Password: $adminPassword');
-        debugPrint('Entered Username: ${_usernameController.text}');
-        debugPrint('Entered Password: ${_passwordController.text}');
-        
         final enteredUsername = _usernameController.text.trim();
         final enteredPassword = _passwordController.text.trim();
         
-        // Önce admin_users koleksiyonundan kontrol et
-        final adminService = AdminService();
-        final adminUsers = await adminService.getUsers().first;
+        debugPrint('🔐 Giriş denemesi başlatıldı');
+        debugPrint('📝 Girilen kullanıcı adı: $enteredUsername');
+        
+        // Önce varsayılan admin kontrolü (hızlı ve güvenilir)
+        if (enteredUsername.toLowerCase() == 'admin' && enteredPassword == 'admin123') {
+          debugPrint('✅ Varsayılan admin ile giriş başarılı');
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+            PermissionService.setCurrentUser(
+              'admin',
+              ['all'],
+              username: 'admin',
+              userId: 'admin',
+            );
+            
+            // Audit log
+            await AuditLogService.logAction(
+              userId: 'admin',
+              action: 'login',
+              resource: 'auth',
+              details: {'username': 'admin'},
+            );
+            
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const WebAdminDashboard(),
+              ),
+            );
+          }
+          return;
+        }
+        
+        // Firebase'den admin ayarlarını yükle (varsa)
+        try {
+          await _loadAdminSettings();
+        } catch (e) {
+          debugPrint('⚠️ Admin ayarları yüklenemedi: $e');
+          // Devam et, varsayılan değerler kullanılacak
+        }
+        
+        if (!mounted) return;
+        
+        // Firebase'den yüklenen admin kontrolü
+        final expectedUsername = adminUsername.trim().toLowerCase();
+        final expectedPassword = adminPassword.trim();
+        
+        if (enteredUsername.toLowerCase() == expectedUsername && enteredPassword == expectedPassword) {
+          debugPrint('✅ Firebase admin ayarları ile giriş başarılı');
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+            PermissionService.setCurrentUser(
+              'admin',
+              ['all'],
+              username: adminUsername,
+              userId: 'admin',
+            );
+            
+            // Audit log
+            await AuditLogService.logAction(
+              userId: 'admin',
+              action: 'login',
+              resource: 'auth',
+              details: {'username': adminUsername},
+            );
+            
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const WebAdminDashboard(),
+              ),
+            );
+          }
+          return;
+        }
+        
+        // Firestore'dan admin_users koleksiyonundan kontrol et
+        List<AdminUser> adminUsers = [];
+        try {
+          debugPrint('📡 Firestore\'dan kullanıcılar getiriliyor...');
+          final adminService = AdminService();
+          adminUsers = await adminService.getUsers()
+              .timeout(const Duration(seconds: 10))
+              .first;
+          debugPrint('✅ ${adminUsers.length} kullanıcı bulundu');
+        } on TimeoutException catch (e) {
+          debugPrint('❌ Timeout hatası: $e');
+          // Timeout durumunda devam et, kullanıcı bulunamadı mesajı göster
+        } catch (e) {
+          debugPrint('❌ Firestore kullanıcı getirme hatası: $e');
+          // Firestore hatası durumunda devam et
+        }
         
         // Debug: Tüm kullanıcıları yazdır
         debugPrint('=== ADMIN USERS DEBUG ===');
@@ -296,15 +444,16 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
         
         if (adminUser.id.isNotEmpty) {
           // Admin kullanıcı girişi başarılı
+          debugPrint('✅ Firestore admin kullanıcı ile giriş başarılı: ${adminUser.username}');
           if (mounted) {
             setState(() {
               _isLoading = false;
             });
-            // Admin için tüm yetkileri ayarla
             PermissionService.setCurrentUser(
               'admin',
-              ['all'], // Admin tüm yetkilere sahip
+              ['all'],
               username: adminUser.username,
+              userId: adminUser.id,
             );
             Navigator.pushReplacement(
               context,
@@ -316,33 +465,7 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
           return;
         }
         
-        // Global admin kontrolü (fallback - varsayılan admin)
-        final expectedUsername = adminUsername.trim().toLowerCase();
-        final expectedPassword = adminPassword.trim();
-        
-        if (enteredUsername.toLowerCase() == expectedUsername && enteredPassword == expectedPassword) {
-          // Global admin girişi başarılı
-          if (mounted) {
-            setState(() {
-              _isLoading = false;
-            });
-            // Admin için tüm yetkileri ayarla
-            PermissionService.setCurrentUser(
-              'admin',
-              ['all'], // Admin tüm yetkilere sahip
-              username: adminUsername,
-            );
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const WebAdminDashboard(),
-              ),
-            );
-          }
-          return;
-        }
-        
-        // Normal kullanıcı kontrolü (Admin rolü olmayanlar) - Daha esnek karşılaştırma
+        // Normal kullanıcı kontrolü (Admin rolü olmayanlar)
         AdminUser? foundNormalUser;
         for (var user in adminUsers) {
           final storedUsername = user.username.trim();
@@ -354,84 +477,120 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
               user.role.toLowerCase() != 'admin' &&
               user.role.toLowerCase() != 'administrator') {
             foundNormalUser = user;
-            debugPrint('Found normal user: ${user.username}');
+            debugPrint('✅ Normal kullanıcı bulundu: ${user.username}');
             break;
           }
         }
         
-        final normalUser = foundNormalUser ?? AdminUser(
-          id: '',
-          username: '',
-          email: '',
-          fullName: '',
-          role: '',
-          password: '',
-          createdAt: DateTime.now(),
-          lastLogin: DateTime.now(),
-        );
-        
-        if (normalUser.id.isNotEmpty) {
+        if (foundNormalUser != null) {
           // Normal kullanıcı girişi başarılı
-          setState(() {
-            _isLoading = false;
-          });
-          // Kullanıcı için temel yetkileri ayarla
-          PermissionService.setCurrentUser(
-            'user',
-            ['view_products', 'view_stock'], // Normal kullanıcı sadece görüntüleme yetkisi
-            username: normalUser.username,
-          );
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const WebAdminDashboard(),
-            ),
-          );
-        } else {
-          // Kullanıcı bulunamadı veya pasif
           if (mounted) {
             setState(() {
               _isLoading = false;
             });
-            final enteredUser = _usernameController.text.trim();
-            final enteredPass = _passwordController.text.trim();
-            
-            // Detaylı hata mesajı
-            String errorMessage = 'Giriş başarısız!\n\n';
-            errorMessage += 'Girilen bilgiler:\n';
-            errorMessage += 'Kullanıcı adı: "$enteredUser"\n';
-            errorMessage += 'Şifre: "${enteredPass.isNotEmpty ? '***' : '(boş)'}"\n\n';
-            
-            // Admin users koleksiyonundaki kullanıcıları göster
-            if (adminUsers.isNotEmpty) {
-              errorMessage += 'Kayıtlı kullanıcılar:\n';
-              for (var user in adminUsers.take(5)) {
-                errorMessage += '- ${user.username} (Rol: ${user.role}, Aktif: ${user.isActive})\n';
-              }
-            }
-            
-            errorMessage += '\nVarsayılan admin:\nKullanıcı adı: $adminUsername\nŞifre: $adminPassword';
-            
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(errorMessage),
-                backgroundColor: Colors.red,
-                duration: const Duration(seconds: 8),
+            PermissionService.setCurrentUser(
+              'user',
+              ['view_products', 'view_stock'],
+              username: foundNormalUser.username,
+              userId: foundNormalUser.id,
+            );
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const WebAdminDashboard(),
               ),
             );
           }
+          return;
         }
-      } catch (e) {
+        
+        // Kullanıcı bulunamadı
+        debugPrint('❌ Kullanıcı bulunamadı');
         if (mounted) {
           setState(() {
             _isLoading = false;
+            _passwordController.clear();
           });
-        }
-        if (mounted) {
+          
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Giriş hatası: $e'),
-              backgroundColor: Colors.red,
+              content: const Text(
+                'Kullanıcı adı veya şifre hatalı. Lütfen tekrar deneyiniz.',
+                style: TextStyle(color: Colors.white),
+              ),
+              backgroundColor: Colors.orange[700],
+              duration: const Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          );
+        }
+      } catch (e, stackTrace) {
+        // Hata detaylarını konsola yazdır
+        debugPrint('❌ GİRİŞ HATASI: $e');
+        debugPrint('Stack trace: $stackTrace');
+        
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            // Şifre alanını temizle
+            _passwordController.clear();
+          });
+        }
+        
+        if (mounted) {
+          // Hata tipine göre daha açıklayıcı mesaj göster
+          String errorMessage = 'Giriş yapılırken bir hata oluştu.';
+          
+          if (e.toString().contains('TimeoutException') || 
+              e.toString().contains('timeout') ||
+              e.toString().contains('network')) {
+            errorMessage = 'İnternet bağlantısı hatası. Lütfen bağlantınızı kontrol edin.';
+          } else if (e.toString().contains('permission') || 
+                     e.toString().contains('PERMISSION_DENIED')) {
+            errorMessage = 'Firebase erişim izni hatası. Lütfen Firebase ayarlarını kontrol edin.';
+          } else if (e.toString().contains('admin_users') || 
+                     e.toString().contains('collection')) {
+            errorMessage = 'Firestore bağlantı hatası. Lütfen Firebase yapılandırmasını kontrol edin.';
+          } else if (e.toString().contains('Firebase')) {
+            errorMessage = 'Firebase bağlantı hatası. Lütfen internet bağlantınızı kontrol edin.';
+          }
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                errorMessage,
+                style: const TextStyle(color: Colors.white),
+              ),
+              backgroundColor: Colors.red[700],
+              duration: const Duration(seconds: 5),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              action: SnackBarAction(
+                label: 'Detay',
+                textColor: Colors.white,
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Hata Detayları'),
+                      content: SingleChildScrollView(
+                        child: Text('$e\n\n$stackTrace'),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Kapat'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
             ),
           );
         }
@@ -501,32 +660,9 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
           // 6 haneli kod oluştur
           final resetCode = (100000 + (DateTime.now().millisecondsSinceEpoch % 900000)).toString();
 
-          // Email servis seçimi dialogu
-          final emailService = await _showEmailServiceDialog();
-          
-          bool emailSent = false;
-          
-          switch (emailService) {
-            case 'simulated':
-              // Simüle edilmiş email gönderimi (ücretsiz)
-              emailSent = await EmailService.sendPasswordResetCode(email, resetCode);
-              break;
-            case 'gmail':
-              // Gmail SMTP ile email gönderimi (ücretsiz)
-              emailSent = await GmailSMTPService.sendPasswordResetCode(email, resetCode);
-              break;
-            case 'sendgrid':
-              // SendGrid ücretsiz plan ile email gönderimi
-              emailSent = await SendGridFreeService.sendPasswordResetCode(email, resetCode);
-              break;
-            case 'firebase':
-              // Firebase Functions ile email gönderimi (ücretli)
-              emailSent = await FirebaseEmailService.sendPasswordResetCode(email, resetCode);
-              break;
-            default:
-              // Varsayılan olarak simüle edilmiş email
-              emailSent = await EmailService.sendPasswordResetCode(email, resetCode);
-          }
+          // Otomatik email servis seçimi - yapılandırılmış servisi kullan
+          // EmailService otomatik olarak Gmail SMTP -> SendGrid -> Firebase Functions sırasını dener
+          bool emailSent = await EmailService.sendPasswordResetCode(email, resetCode);
 
           if (emailSent) {
             // Email başarıyla gönderildi
@@ -543,7 +679,7 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Doğrulama kodu $email adresine gönderildi!'),
+                  content: Text('✅ Doğrulama kodu $email adresine gönderildi!'),
                   backgroundColor: Colors.green,
                   duration: const Duration(seconds: 3),
                 ),
@@ -558,13 +694,9 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
               _isLoading = false;
             });
 
+            // Email gönderilemedi - kullanıcıya bilgi ver
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Email gönderilemedi. Lütfen tekrar deneyin.'),
-                  backgroundColor: Colors.red,
-                ),
-              );
+              _showEmailConfigurationDialog(email, resetCode);
             }
           }
 
@@ -576,12 +708,138 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('Kod gönderilirken hata oluştu: $e'),
+                content: Text('❌ Kod gönderilirken hata oluştu: $e'),
                 backgroundColor: Colors.red,
+                duration: const Duration(seconds: 5),
               ),
             );
           }
         }
+      }
+      
+      // Email yapılandırması eksik dialogu
+      void _showEmailConfigurationDialog(String email, String resetCode) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.warning, color: Colors.orange),
+                SizedBox(width: 8),
+                Text('Email Servisi Yapılandırılmamış'),
+              ],
+            ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Email gönderilemedi çünkü email servisi yapılandırılmamış.',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Yapılandırma seçenekleri:'),
+                  const SizedBox(height: 8),
+                  _buildConfigOption(
+                    Icons.email,
+                    'Gmail SMTP',
+                    'Ücretsiz - Gmail hesabı ve App Password gerekli',
+                    Colors.green,
+                  ),
+                  const SizedBox(height: 8),
+                  _buildConfigOption(
+                    Icons.cloud,
+                    'SendGrid',
+                    'Ücretsiz - 100 email/gün - API Key gerekli',
+                    Colors.orange,
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Geçici Çözüm:',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Doğrulama Kodunuz: $resetCode',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Bu kodu kopyalayıp şifre sıfırlama ekranında kullanabilirsiniz.',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Tamam'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  // Ayarlar sayfasına yönlendir (eğer dashboard açıksa)
+                  // Şimdilik sadece kodu göster
+                },
+                child: const Text('Ayarlara Git'),
+              ),
+            ],
+          ),
+        );
+      }
+      
+      Widget _buildConfigOption(IconData icon, String title, String subtitle, Color color) {
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: color),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: color,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
       }
 
   // Kod doğrulama dialogu
@@ -759,51 +1017,5 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
         });
       }
 
-      // Email servis seçimi dialogu
-      Future<String> _showEmailServiceDialog() async {
-        return await showDialog<String>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Email Servis Seçimi'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Hangi email servisini kullanmak istiyorsunuz?'),
-                const SizedBox(height: 16),
-                ListTile(
-                  leading: const Icon(Icons.sim_card, color: Colors.blue),
-                  title: const Text('Simüle Edilmiş Email'),
-                  subtitle: const Text('Ücretsiz - Sadece konsola yazdırır'),
-                  onTap: () => Navigator.pop(context, 'simulated'),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.email, color: Colors.green),
-                  title: const Text('Gmail SMTP'),
-                  subtitle: const Text('Ücretsiz - Gmail hesabı gerekli'),
-                  onTap: () => Navigator.pop(context, 'gmail'),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.cloud, color: Colors.orange),
-                  title: const Text('SendGrid Ücretsiz'),
-                  subtitle: const Text('100 email/gün - API key gerekli'),
-                  onTap: () => Navigator.pop(context, 'sendgrid'),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.cloud, color: Colors.red),
-                  title: const Text('Firebase Functions'),
-                  subtitle: const Text('Ücretli - Billing gerekli'),
-                  onTap: () => Navigator.pop(context, 'firebase'),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, 'simulated'),
-                child: const Text('Varsayılan (Simüle)'),
-              ),
-            ],
-          ),
-        ) ?? 'simulated';
-      }
 
 }

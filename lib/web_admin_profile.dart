@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'model/admin_user.dart';
 import 'services/admin_service.dart';
 import 'services/permission_service.dart';
+import 'services/theme_service.dart';
+import 'services/app_theme.dart';
 
 class WebAdminProfile extends StatefulWidget {
   const WebAdminProfile({super.key});
@@ -36,12 +38,36 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
   bool _twoFactorEnabled = false;
   bool _emailNotifications = true;
   bool _darkMode = false;
+  String _selectedLanguage = 'tr';
+  List<Map<String, dynamic>> _devices = [];
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _loadUserProfile();
+  }
+  
+  Future<void> _loadUserPreferences() async {
+    if (_currentUser == null) return;
+    
+    try {
+      final darkMode = await ThemeService.getDarkMode(_currentUser!.id);
+      final language = await ThemeService.getLanguage(_currentUser!.id);
+      final twoFactor = await ThemeService.getTwoFactorEnabled(_currentUser!.id);
+      final devices = await ThemeService.getDevices(_currentUser!.id);
+      
+      if (mounted) {
+        setState(() {
+          _darkMode = darkMode;
+          _selectedLanguage = language;
+          _twoFactorEnabled = twoFactor;
+          _devices = devices;
+        });
+      }
+    } catch (e) {
+      debugPrint('Kullanıcı tercihleri yüklenirken hata: $e');
+    }
   }
 
   @override
@@ -175,6 +201,12 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
           _isLoading = false;
         });
         debugPrint('Profil başarıyla yüklendi');
+        
+        // Kullanıcı tercihlerini yükle
+        await _loadUserPreferences();
+        
+        // Mevcut cihaz bilgisini kaydet
+        await _saveCurrentDevice();
       }
     } catch (e, stackTrace) {
       debugPrint('Profil yüklenirken beklenmeyen hata: $e');
@@ -1083,18 +1115,35 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
               title: const Text('İki Faktörlü Kimlik Doğrulama'),
               subtitle: const Text('Hesabınız için ekstra güvenlik katmanı'),
               value: _twoFactorEnabled,
-              onChanged: (value) {
-                setState(() {
-                  _twoFactorEnabled = value;
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(value 
-                      ? 'İki faktörlü kimlik doğrulama etkinleştirildi'
-                      : 'İki faktörlü kimlik doğrulama devre dışı bırakıldı'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
+              onChanged: (value) async {
+                if (_currentUser == null) return;
+                
+                try {
+                  await ThemeService.setTwoFactorEnabled(_currentUser!.id, value);
+                  setState(() {
+                    _twoFactorEnabled = value;
+                  });
+                  
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(value 
+                          ? '✅ İki faktörlü kimlik doğrulama etkinleştirildi'
+                          : 'ℹ️ İki faktörlü kimlik doğrulama devre dışı bırakıldı'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('2FA ayarı kaydedilemedi: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
               },
               secondary: const Icon(Icons.verified_user_outlined),
             ),
@@ -1111,14 +1160,10 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
             ListTile(
               leading: const Icon(Icons.devices_outlined),
               title: const Text('Cihazlar'),
-              subtitle: const Text('Aktif oturumlarınızı yönetin'),
+              subtitle: Text('${_devices.length} aktif cihaz'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Cihaz yönetimi yakında eklenecek'),
-                  ),
-                );
+                _showDeviceManagementDialog();
               },
             ),
           ],
@@ -1371,18 +1416,42 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
               title: const Text('Karanlık Mod'),
               subtitle: const Text('Karanlık temayı kullan'),
               value: _darkMode,
-              onChanged: (value) {
-                setState(() {
-                  _darkMode = value;
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(value 
-                      ? 'Karanlık mod etkinleştirildi'
-                      : 'Karanlık mod devre dışı bırakıldı'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
+              onChanged: (value) async {
+                if (_currentUser == null) return;
+                
+                try {
+                  await ThemeService.setDarkMode(_currentUser!.id, value);
+                  setState(() {
+                    _darkMode = value;
+                  });
+                  
+                  // Tema değişikliğini bildir
+                  final appTheme = AppTheme.of(context);
+                  if (appTheme != null) {
+                    appTheme.onThemeChanged(value);
+                  }
+                  
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(value 
+                          ? '✅ Karanlık mod etkinleştirildi'
+                          : 'ℹ️ Karanlık mod devre dışı bırakıldı'),
+                        backgroundColor: Colors.green,
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Tema ayarı kaydedilemedi: $e'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                }
               },
               secondary: const Icon(Icons.dark_mode_outlined),
             ),
@@ -1391,14 +1460,10 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
             ListTile(
               leading: const Icon(Icons.language_outlined),
               title: const Text('Dil Tercihi'),
-              subtitle: const Text('Türkçe'),
+              subtitle: Text(_getLanguageName(_selectedLanguage)),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Dil ayarları yakında eklenecek'),
-                  ),
-                );
+                _showLanguageDialog();
               },
             ),
           ],
@@ -1531,5 +1596,206 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
 
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year}';
+  }
+  
+  String _getLanguageName(String code) {
+    switch (code) {
+      case 'tr':
+        return 'Türkçe';
+      case 'en':
+        return 'English';
+      case 'ar':
+        return 'العربية';
+      default:
+        return 'Türkçe';
+    }
+  }
+  
+  void _showLanguageDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Dil Seçimi'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RadioListTile<String>(
+              title: const Text('Türkçe'),
+              value: 'tr',
+              groupValue: _selectedLanguage,
+              onChanged: (value) {
+                if (value != null) {
+                  _changeLanguage(value);
+                  Navigator.pop(context);
+                }
+              },
+            ),
+            RadioListTile<String>(
+              title: const Text('English'),
+              value: 'en',
+              groupValue: _selectedLanguage,
+              onChanged: (value) {
+                if (value != null) {
+                  _changeLanguage(value);
+                  Navigator.pop(context);
+                }
+              },
+            ),
+            RadioListTile<String>(
+              title: const Text('العربية'),
+              value: 'ar',
+              groupValue: _selectedLanguage,
+              onChanged: (value) {
+                if (value != null) {
+                  _changeLanguage(value);
+                  Navigator.pop(context);
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Future<void> _changeLanguage(String language) async {
+    if (_currentUser == null) return;
+    
+    try {
+      await ThemeService.setLanguage(_currentUser!.id, language);
+      setState(() {
+        _selectedLanguage = language;
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Dil tercihi ${_getLanguageName(language)} olarak kaydedildi'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Dil tercihi kaydedilemedi: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+  
+  void _showDeviceManagementDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cihaz Yönetimi'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: _devices.isEmpty
+              ? const Text('Henüz kayıtlı cihaz bulunmuyor')
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _devices.length,
+                  itemBuilder: (context, index) {
+                    final device = _devices[index];
+                    final isCurrent = device['isCurrent'] as bool;
+                    final lastActive = device['lastActive'] as DateTime;
+                    
+                    return ListTile(
+                      leading: Icon(
+                        _getDeviceIcon(device['platform'] as String),
+                        color: isCurrent ? Colors.green : Colors.grey,
+                      ),
+                      title: Text(device['name'] as String),
+                      subtitle: Text(
+                        '${device['platform']} • ${_formatDateTime(lastActive)}',
+                      ),
+                      trailing: isCurrent
+                          ? const Chip(
+                              label: Text('Aktif', style: TextStyle(fontSize: 10)),
+                              backgroundColor: Colors.green,
+                              labelStyle: TextStyle(color: Colors.white),
+                            )
+                          : TextButton(
+                              onPressed: () async {
+                                await _removeDevice(device['id'] as String);
+                                Navigator.pop(context);
+                                _showDeviceManagementDialog();
+                              },
+                              child: const Text('Kaldır'),
+                            ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Kapat'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  IconData _getDeviceIcon(String platform) {
+    if (platform.toLowerCase().contains('android')) {
+      return Icons.android;
+    } else if (platform.toLowerCase().contains('ios')) {
+      return Icons.phone_iphone;
+    } else if (platform.toLowerCase().contains('web')) {
+      return Icons.web;
+    } else {
+      return Icons.devices;
+    }
+  }
+  
+  Future<void> _saveCurrentDevice() async {
+    if (_currentUser == null) return;
+    
+    try {
+      // Web için basit cihaz bilgisi
+      final deviceInfo = {
+        'id': 'web_${DateTime.now().millisecondsSinceEpoch}',
+        'name': 'Web Tarayıcı',
+        'platform': 'Web',
+        'isCurrent': true,
+      };
+      
+      await ThemeService.saveDevice(_currentUser!.id, deviceInfo);
+      await _loadUserPreferences();
+    } catch (e) {
+      debugPrint('Cihaz bilgisi kaydedilemedi: $e');
+    }
+  }
+  
+  Future<void> _removeDevice(String deviceId) async {
+    if (_currentUser == null) return;
+    
+    try {
+      await ThemeService.removeDevice(_currentUser!.id, deviceId);
+      await _loadUserPreferences();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Cihaz başarıyla kaldırıldı'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Cihaz kaldırılamadı: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 }

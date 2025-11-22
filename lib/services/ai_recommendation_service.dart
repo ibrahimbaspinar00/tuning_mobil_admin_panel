@@ -11,6 +11,9 @@ class AIRecommendationService {
   final Map<String, int> _productViews = {};
   final Map<String, int> _productPurchases = {};
   final Map<String, List<String>> _userCategories = {};
+  
+  // Ürün cache'i - veritabanından gelen ürün bilgilerini tutar
+  final Map<String, AdminProduct> _productCache = {};
 
   /// Kullanıcı davranışını kaydet
   void trackUserBehavior(String userId, String action, String productId) {
@@ -52,8 +55,11 @@ class AIRecommendationService {
     int limit = 10,
   }) async {
     try {
+      // Ürün cache'ini güncelle
+      _updateProductCache(allProducts);
+      
       // Kullanıcı davranış analizi
-      final userPreferences = _analyzeUserPreferences(userId);
+      final userPreferences = _analyzeUserPreferences(userId, allProducts);
       
       // Benzer kullanıcılar analizi
       final similarUsers = _findSimilarUsers(userId);
@@ -84,9 +90,16 @@ class AIRecommendationService {
       return _getFallbackRecommendations(allProducts, limit);
     }
   }
+  
+  /// Ürün cache'ini güncelle
+  void _updateProductCache(List<AdminProduct> products) {
+    for (final product in products) {
+      _productCache[product.id] = product;
+    }
+  }
 
   /// Kullanıcı tercihlerini analiz et
-  Map<String, double> _analyzeUserPreferences(String userId) {
+  Map<String, double> _analyzeUserPreferences(String userId, List<AdminProduct> allProducts) {
     final preferences = <String, double>{};
     
     if (!_userBehavior.containsKey(userId)) {
@@ -104,14 +117,14 @@ class AIRecommendationService {
         final productId = parts[1];
         
         // Kategori skorları
-        final category = _getProductCategory(productId);
+        final category = _getProductCategory(productId, allProducts);
         if (category != null) {
           categoryScores[category] = (categoryScores[category] ?? 0) + 
               (action == 'view' ? 1.0 : action == 'purchase' ? 3.0 : 0.5);
         }
         
         // Fiyat skorları
-        final price = _getProductPrice(productId);
+        final price = _getProductPrice(productId, allProducts);
         if (price != null) {
           final priceRange = _getPriceRange(price);
           priceScores[priceRange] = (priceScores[priceRange] ?? 0) + 
@@ -124,12 +137,16 @@ class AIRecommendationService {
     final totalCategoryScore = categoryScores.values.fold(0.0, (a, b) => a + b);
     final totalPriceScore = priceScores.values.fold(0.0, (a, b) => a + b);
     
-    for (final entry in categoryScores.entries) {
-      preferences['category_${entry.key}'] = entry.value / totalCategoryScore;
+    if (totalCategoryScore > 0) {
+      for (final entry in categoryScores.entries) {
+        preferences['category_${entry.key}'] = entry.value / totalCategoryScore;
+      }
     }
     
-    for (final entry in priceScores.entries) {
-      preferences['price_${entry.key}'] = entry.value / totalPriceScore;
+    if (totalPriceScore > 0) {
+      for (final entry in priceScores.entries) {
+        preferences['price_${entry.key}'] = entry.value / totalPriceScore;
+      }
     }
     
     return preferences;
@@ -194,7 +211,7 @@ class AIRecommendationService {
       final parts = behavior.split(':');
       if (parts.length == 2) {
         final productId = parts[1];
-        final price = _getProductPrice(productId);
+        final price = _getProductPrice(productId, allProducts);
         if (price != null) {
           prices.add(price);
         }
@@ -289,15 +306,43 @@ class AIRecommendationService {
     return popularProducts.take(limit).toList();
   }
 
-  /// Yardımcı metodlar
-  String? _getProductCategory(String productId) {
-    // Bu gerçek uygulamada veritabanından gelecek
-    return null;
+  /// Yardımcı metodlar - Ürün bilgilerini cache'den veya allProducts listesinden al
+  String? _getProductCategory(String productId, List<AdminProduct> allProducts) {
+    // Önce cache'den kontrol et
+    final cachedProduct = _productCache[productId];
+    if (cachedProduct != null) {
+      return cachedProduct.category;
+    }
+    
+    // Cache'de yoksa allProducts listesinden ara
+    try {
+      final product = allProducts.firstWhere((p) => p.id == productId);
+      // Cache'e ekle
+      _productCache[productId] = product;
+      return product.category;
+    } catch (e) {
+      // Ürün bulunamadı
+      return null;
+    }
   }
 
-  double? _getProductPrice(String productId) {
-    // Bu gerçek uygulamada veritabanından gelecek
-    return null;
+  double? _getProductPrice(String productId, List<AdminProduct> allProducts) {
+    // Önce cache'den kontrol et
+    final cachedProduct = _productCache[productId];
+    if (cachedProduct != null) {
+      return cachedProduct.price;
+    }
+    
+    // Cache'de yoksa allProducts listesinden ara
+    try {
+      final product = allProducts.firstWhere((p) => p.id == productId);
+      // Cache'e ekle
+      _productCache[productId] = product;
+      return product.price;
+    } catch (e) {
+      // Ürün bulunamadı
+      return null;
+    }
   }
 
   String _getPriceRange(double price) {
@@ -338,5 +383,6 @@ class AIRecommendationService {
     _productViews.clear();
     _productPurchases.clear();
     _userCategories.clear();
+    _productCache.clear();
   }
 }

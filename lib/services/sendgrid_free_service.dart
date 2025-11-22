@@ -1,11 +1,88 @@
 // lib/services/sendgrid_free_service.dart
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class SendGridFreeService {
-  // SendGrid ücretsiz plan - 100 email/gün
-  static const String _sendGridApiKey = 'YOUR_SENDGRID_API_KEY'; // SendGrid API Key
-  static const String _senderEmail = 'noreply@yourdomain.com'; // Gönderen email
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  
+  // SendGrid ayarları - Firebase'den yüklenecek
+  static String? _sendGridApiKey;
+  static String? _senderEmail;
+  
+  // Firebase'den SendGrid ayarlarını yükle
+  static Future<void> _loadCredentials() async {
+    try {
+      final settingsDoc = await _firestore
+          .collection('admin_settings')
+          .doc('system_settings')
+          .get();
+      
+      if (settingsDoc.exists) {
+        final data = settingsDoc.data();
+        _sendGridApiKey = data?['sendGridApiKey'] as String?;
+        _senderEmail = data?['sendGridSenderEmail'] as String?;
+      }
+    } catch (e) {
+      print('❌ SendGrid ayarları yüklenirken hata: $e');
+    }
+  }
+  
+  // SendGrid ayarlarını Firebase'e kaydet
+  static Future<bool> saveCredentials(String apiKey, String senderEmail) async {
+    try {
+      await _firestore
+          .collection('admin_settings')
+          .doc('system_settings')
+          .set({
+        'sendGridApiKey': apiKey.trim(),
+        'sendGridSenderEmail': senderEmail.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+      
+      // Cache'i güncelle
+      _sendGridApiKey = apiKey.trim();
+      _senderEmail = senderEmail.trim();
+      
+      return true;
+    } catch (e) {
+      print('❌ SendGrid ayarları kaydedilirken hata: $e');
+      return false;
+    }
+  }
+  
+  // SendGrid ayarlarını kontrol et
+  static Future<bool> _checkCredentials() async {
+    // Önce cache'den kontrol et
+    if (_sendGridApiKey != null && _senderEmail != null) {
+      if (_sendGridApiKey!.isNotEmpty && _senderEmail!.isNotEmpty) {
+        // Varsayılan değerler kontrolü
+        if (_sendGridApiKey != 'YOUR_SENDGRID_API_KEY' && 
+            _senderEmail != 'noreply@yourdomain.com') {
+          return true;
+        }
+      }
+    }
+    
+    // Cache'de yoksa Firebase'den yükle
+    await _loadCredentials();
+    
+    if (_sendGridApiKey == null || _senderEmail == null) {
+      return false;
+    }
+    
+    if (_sendGridApiKey!.isEmpty || _senderEmail!.isEmpty) {
+      return false;
+    }
+    
+    // Varsayılan değerler kontrolü
+    if (_sendGridApiKey == 'YOUR_SENDGRID_API_KEY' || 
+        _senderEmail == 'noreply@yourdomain.com') {
+      return false;
+    }
+    
+    return true;
+  }
   
   // Ücretsiz SendGrid ile email gönder
   static Future<bool> sendPasswordResetCode(String email, String code) async {
@@ -14,14 +91,23 @@ class SendGridFreeService {
       print('📧 Alıcı: $email');
       print('📧 Kod: $code');
       
-      if (_sendGridApiKey == 'YOUR_SENDGRID_API_KEY') {
-        print('❌ SendGrid API Key ayarlanmamış!');
+      // SendGrid ayarları kontrol et
+      final hasCredentials = await _checkCredentials();
+      if (!hasCredentials) {
+        print('❌ SendGrid ayarları yapılmamış!');
+        print('📧 Ayarlar sayfasından SendGrid API Key ve Sender Email girin');
+        print('📧 SendGrid API Key: SendGrid hesabınızdan alın');
+        print('📧 Sender Email: Doğrulanmış gönderen email adresi');
         return false;
       }
       
+      // Kimlik bilgileri kontrol edildi, null olamazlar
+      final apiKey = _sendGridApiKey!;
+      final senderEmail = _senderEmail!;
+      
       final url = Uri.parse('https://api.sendgrid.com/v3/mail/send');
       final headers = {
-        'Authorization': 'Bearer $_sendGridApiKey',
+        'Authorization': 'Bearer $apiKey',
         'Content-Type': 'application/json',
       };
       
@@ -33,7 +119,7 @@ class SendGridFreeService {
             ]
           }
         ],
-        'from': {'email': _senderEmail, 'name': 'Tuning App Admin'},
+        'from': {'email': senderEmail, 'name': 'Tuning App Admin'},
         'subject': 'Şifre Sıfırlama Kodunuz',
         'content': [
           {
@@ -84,9 +170,21 @@ Tuning App Admin Paneli
       print('📧 SendGrid test email gönderiliyor...');
       print('📧 Alıcı: $email');
       
+      // SendGrid ayarları kontrol et
+      final hasCredentials = await _checkCredentials();
+      if (!hasCredentials) {
+        print('❌ SendGrid ayarları yapılmamış!');
+        print('📧 Ayarlar sayfasından SendGrid API Key ve Sender Email girin');
+        return false;
+      }
+      
+      // Kimlik bilgileri kontrol edildi, null olamazlar
+      final apiKey = _sendGridApiKey!;
+      final senderEmail = _senderEmail!;
+      
       final url = Uri.parse('https://api.sendgrid.com/v3/mail/send');
       final headers = {
-        'Authorization': 'Bearer $_sendGridApiKey',
+        'Authorization': 'Bearer $apiKey',
         'Content-Type': 'application/json',
       };
       
@@ -98,7 +196,7 @@ Tuning App Admin Paneli
             ]
           }
         ],
-        'from': {'email': _senderEmail, 'name': 'Tuning App Admin'},
+        'from': {'email': senderEmail, 'name': 'Tuning App Admin'},
         'subject': 'Test Email',
         'content': [
           {

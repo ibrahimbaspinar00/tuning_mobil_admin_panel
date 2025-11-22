@@ -13,6 +13,14 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
   final AdminService _adminService = AdminService();
   String _selectedStatus = 'Tümü';
   String _sortBy = 'orderDate';
+  
+  // Pagination
+  static const int _itemsPerPage = 20;
+  int _currentPage = 0;
+  List<OrderModel.Order> _allOrders = [];
+  List<OrderModel.Order> _filteredOrders = [];
+  List<OrderModel.Order> _displayedOrders = [];
+  bool _hasMore = true;
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +66,9 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
                               onChanged: (value) {
                                 setState(() {
                                   _selectedStatus = value!;
+                                  _currentPage = 0; // Reset pagination
                                 });
+                                _applyFilters();
                               },
                             ),
                           ),
@@ -77,7 +87,9 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
                               onChanged: (value) {
                                 setState(() {
                                   _sortBy = value!;
+                                  _currentPage = 0; // Reset pagination
                                 });
+                                _applyFilters();
                               },
                             ),
                           ),
@@ -103,7 +115,9 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
                               onChanged: (value) {
                                 setState(() {
                                   _selectedStatus = value!;
+                                  _currentPage = 0; // Reset pagination
                                 });
+                                _applyFilters();
                               },
                             ),
                           ),
@@ -121,7 +135,9 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
                               onChanged: (value) {
                                 setState(() {
                                   _sortBy = value!;
+                                  _currentPage = 0; // Reset pagination
                                 });
+                                _applyFilters();
                               },
                             ),
                           ),
@@ -186,7 +202,29 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
                     
                     final orders = snapshot.data ?? [];
                     
-                    if (orders.isEmpty) {
+                    // State'i build dışında güncelle - setState'i build sırasında çağırmamak için
+                    if (_allOrders.length != orders.length || 
+                        !_allOrders.every((order) => orders.any((o) => o.id == order.id))) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) {
+                          setState(() {
+                            _allOrders = orders;
+                          });
+                          _applyFilters();
+                        }
+                      });
+                    }
+                    
+                    // Mevcut state'ten filtreli ve sayfalanmış siparişleri kullan
+                    final displayedOrders = _displayedOrders.isEmpty && _filteredOrders.isEmpty
+                        ? orders.take(_itemsPerPage).toList()
+                        : _displayedOrders;
+                    final hasMore = _hasMore;
+                    final filteredOrdersCount = _filteredOrders.isEmpty 
+                        ? orders.length 
+                        : _filteredOrders.length;
+                    
+                    if (displayedOrders.isEmpty && orders.isEmpty) {
                       return Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -215,9 +253,22 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
                     
                     return ListView.builder(
                       padding: EdgeInsets.all(isMobile ? 8 : 16),
-                      itemCount: orders.length,
+                      itemCount: displayedOrders.length + (hasMore ? 1 : 0),
                       itemBuilder: (context, index) {
-                        final order = orders[index];
+                        // Load more indicator
+                        if (index == displayedOrders.length) {
+                          return Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(16),
+                              child: ElevatedButton(
+                                onPressed: _loadMoreOrders,
+                                child: Text('Daha Fazla Yükle (${filteredOrdersCount - displayedOrders.length} kaldı)'),
+                              ),
+                            ),
+                          );
+                        }
+                        
+                        final order = displayedOrders[index];
                         return _buildOrderCard(order, isMobile);
                       },
                     );
@@ -233,7 +284,7 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
 
   Widget _buildOrderCard(OrderModel.Order order, bool isMobile) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: EdgeInsets.only(bottom: 12, left: isMobile ? 4 : 0, right: isMobile ? 4 : 0),
       elevation: 2,
       child: Padding(
         padding: EdgeInsets.all(isMobile ? 12 : 16),
@@ -246,13 +297,16 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
                 Expanded(
                   child: Text(
                     'Sipariş #${order.id}',
-                    style: const TextStyle(
-                      fontSize: 18,
+                    style: TextStyle(
+                      fontSize: isMobile ? 16 : 18,
                       fontWeight: FontWeight.bold,
                     ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                _buildStatusChip(order.status),
+                Flexible(
+                  child: _buildStatusChip(order.status),
+                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -260,12 +314,13 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
             // Müşteri bilgileri
             Row(
               children: [
-                Icon(Icons.person, size: 16, color: Colors.grey[600]),
+                Icon(Icons.person, size: isMobile ? 14 : 16, color: Colors.grey[600]),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     order.customerName,
-                    style: const TextStyle(fontSize: 16),
+                    style: TextStyle(fontSize: isMobile ? 14 : 16),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
@@ -275,13 +330,15 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
             // Tarih
             Row(
               children: [
-                Icon(Icons.calendar_today, size: 16, color: Colors.grey[600]),
+                Icon(Icons.calendar_today, size: isMobile ? 14 : 16, color: Colors.grey[600]),
                 const SizedBox(width: 8),
-                Text(
-                  _formatDate(order.orderDate),
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
+                Flexible(
+                  child: Text(
+                    _formatDate(order.orderDate),
+                    style: TextStyle(
+                      fontSize: isMobile ? 12 : 14,
+                      color: Colors.grey[600],
+                    ),
                   ),
                 ),
               ],
@@ -291,14 +348,16 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
             // Toplam tutar
             Row(
               children: [
-                Icon(Icons.attach_money, size: 16, color: Colors.green[600]),
+                Icon(Icons.attach_money, size: isMobile ? 14 : 16, color: Colors.green[600]),
                 const SizedBox(width: 8),
-                Text(
-                  '${order.totalAmount.toStringAsFixed(2)} TL',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green[600],
+                Flexible(
+                  child: Text(
+                    '${order.totalAmount.toStringAsFixed(2)} TL',
+                    style: TextStyle(
+                      fontSize: isMobile ? 14 : 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green[600],
+                    ),
                   ),
                 ),
               ],
@@ -310,53 +369,87 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
               Text(
                 'Ürünler:',
                 style: TextStyle(
-                  fontSize: 14,
+                  fontSize: isMobile ? 12 : 14,
                   fontWeight: FontWeight.w500,
                   color: Colors.grey[700],
                 ),
               ),
               const SizedBox(height: 4),
               ...order.products.map((product) => Padding(
-                padding: const EdgeInsets.only(left: 16, bottom: 2),
+                padding: EdgeInsets.only(left: isMobile ? 8 : 16, bottom: 2),
                 child: Text(
                   '• ${product.name} x${product.quantity}',
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: isMobile ? 12 : 14,
                     color: Colors.grey[600],
                   ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 2,
                 ),
               )),
               const SizedBox(height: 12),
             ],
             
             // Aksiyon butonları
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () => _viewOrderDetails(order),
-                    icon: const Icon(Icons.visibility, size: 16),
-                    label: const Text('Detaylar'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue,
-                      foregroundColor: Colors.white,
-                    ),
+            if (isMobile) ...[
+              // Mobile: Dikey düzen
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _viewOrderDetails(order),
+                  icon: const Icon(Icons.visibility, size: 16),
+                  label: const Text('Detaylar'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () => _updateOrderStatus(order),
-                    icon: const Icon(Icons.edit, size: 16),
-                    label: const Text('Durum Güncelle'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.orange,
-                      foregroundColor: Colors.white,
-                    ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _updateOrderStatus(order),
+                  icon: const Icon(Icons.edit, size: 16),
+                  label: const Text('Durum Güncelle'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ] else ...[
+              // Desktop: Yatay düzen
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _viewOrderDetails(order),
+                      icon: const Icon(Icons.visibility, size: 16),
+                      label: const Text('Detaylar'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _updateOrderStatus(order),
+                      icon: const Icon(Icons.edit, size: 16),
+                      label: const Text('Durum Güncelle'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -394,21 +487,76 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
     }
     
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Text(
         text,
         style: TextStyle(
           color: color,
-          fontSize: 12,
+          fontSize: 10,
           fontWeight: FontWeight.bold,
         ),
+        overflow: TextOverflow.ellipsis,
       ),
     );
+  }
+
+  void _applyFilters() {
+    setState(() {
+      // Durum filtresi
+      _filteredOrders = _allOrders.where((order) {
+        if (_selectedStatus != 'Tümü' && order.status != _selectedStatus) {
+          return false;
+        }
+        return true;
+      }).toList();
+      
+      // Sıralama
+      _filteredOrders.sort((a, b) {
+        int comparison = 0;
+        switch (_sortBy) {
+          case 'orderDate':
+            comparison = a.orderDate.compareTo(b.orderDate);
+            break;
+          case 'totalAmount':
+            comparison = a.totalAmount.compareTo(b.totalAmount);
+            break;
+          case 'customerName':
+            comparison = a.customerName.compareTo(b.customerName);
+            break;
+          default:
+            comparison = a.orderDate.compareTo(b.orderDate);
+        }
+        return -comparison; // Descending by default
+      });
+      
+      // Pagination reset
+      _currentPage = 0;
+      _updateDisplayedOrders();
+    });
+  }
+  
+  void _updateDisplayedOrders() {
+    final startIndex = _currentPage * _itemsPerPage;
+    final endIndex = (startIndex + _itemsPerPage).clamp(0, _filteredOrders.length);
+    
+    setState(() {
+      _displayedOrders = _filteredOrders.sublist(0, endIndex);
+      _hasMore = endIndex < _filteredOrders.length;
+    });
+  }
+  
+  void _loadMoreOrders() {
+    if (!_hasMore) return;
+    
+    setState(() {
+      _currentPage++;
+    });
+    _updateDisplayedOrders();
   }
 
   String _formatDate(DateTime date) {
@@ -418,64 +566,115 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
   void _viewOrderDetails(OrderModel.Order order) {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Sipariş Detayları #${order.id}'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildDetailRow('Müşteri', order.customerName),
-              _buildDetailRow('E-posta', order.customerEmail),
-              _buildDetailRow('Telefon', order.customerPhone),
-              _buildDetailRow('Adres', order.shippingAddress),
-              _buildDetailRow('Sipariş Tarihi', _formatDate(order.orderDate)),
-              _buildDetailRow('Durum', _getStatusText(order.status)),
-              _buildDetailRow('Toplam Tutar', '${order.totalAmount.toStringAsFixed(2)} TL'),
-              const SizedBox(height: 16),
-              const Text(
-                'Ürünler:',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              ...order.products.map((product) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  '• ${product.name} x${product.quantity} - ${product.price} TL',
+      builder: (context) => LayoutBuilder(
+        builder: (context, constraints) {
+          final isMobile = constraints.maxWidth < 600;
+          
+          return AlertDialog(
+            title: Text(
+              'Sipariş Detayları #${order.id}',
+              style: TextStyle(fontSize: isMobile ? 16 : 20),
+            ),
+            contentPadding: EdgeInsets.all(isMobile ? 16 : 24),
+            content: SizedBox(
+              width: isMobile ? double.infinity : 500,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildDetailRow('Müşteri', order.customerName, isMobile),
+                    _buildDetailRow('E-posta', order.customerEmail, isMobile),
+                    _buildDetailRow('Telefon', order.customerPhone, isMobile),
+                    _buildDetailRow('Adres', order.shippingAddress, isMobile),
+                    _buildDetailRow('Sipariş Tarihi', _formatDate(order.orderDate), isMobile),
+                    _buildDetailRow('Durum', _getStatusText(order.status), isMobile),
+                    _buildDetailRow('Toplam Tutar', '${order.totalAmount.toStringAsFixed(2)} TL', isMobile),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Ürünler:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: isMobile ? 14 : 16,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    ...order.products.map((product) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        '• ${product.name} x${product.quantity} - ${product.price} TL',
+                        style: TextStyle(fontSize: isMobile ? 12 : 14),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 2,
+                      ),
+                    )),
+                  ],
                 ),
-              )),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Kapat'),
+              ),
             ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Kapat'),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(
+  Widget _buildDetailRow(String label, String value, bool isMobile) {
+    if (isMobile) {
+      // Mobile: Dikey düzen
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
               '$label:',
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: Colors.grey[700],
+              ),
             ),
-          ),
-          Expanded(
-            child: Text(value),
-          ),
-        ],
-      ),
-    );
+            const SizedBox(height: 4),
+            Text(
+              value,
+              style: const TextStyle(fontSize: 14),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 3,
+            ),
+          ],
+        ),
+      );
+    } else {
+      // Desktop: Yatay düzen
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 120,
+              child: Text(
+                '$label:',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                value,
+                overflow: TextOverflow.ellipsis,
+                maxLines: 3,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   String _getStatusText(String status) {
@@ -619,40 +818,54 @@ class _OrderStatusDialogState extends State<_OrderStatusDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Sipariş Durumu Güncelle'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Text('Yeni durumu seçin:'),
-          const SizedBox(height: 16),
-          DropdownButton<String>(
-            value: selectedStatus,
-            isExpanded: true,
-            items: const [
-              DropdownMenuItem(value: 'Beklemede', child: Text('Beklemede')),
-              DropdownMenuItem(value: 'Onaylandı', child: Text('Onaylandı')),
-              DropdownMenuItem(value: 'Kargoya Verildi', child: Text('Kargoya Verildi')),
-              DropdownMenuItem(value: 'Teslim Edildi', child: Text('Teslim Edildi')),
-              DropdownMenuItem(value: 'İptal Edildi', child: Text('İptal Edildi')),
-            ],
-            onChanged: _isUpdating ? null : (value) {
-              if (value != null) {
-                setState(() {
-                  selectedStatus = value;
-                });
-              }
-            },
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = constraints.maxWidth < 600;
+        
+        return AlertDialog(
+          title: Text(
+            'Sipariş Durumu Güncelle',
+            style: TextStyle(fontSize: isMobile ? 16 : 20),
           ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: _isUpdating ? null : () => Navigator.pop(context),
-          child: const Text('İptal'),
-        ),
-        ElevatedButton(
-          onPressed: _isUpdating ? null : () async {
+          contentPadding: EdgeInsets.all(isMobile ? 16 : 24),
+          content: SizedBox(
+            width: isMobile ? double.infinity : 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Yeni durumu seçin:',
+                  style: TextStyle(fontSize: isMobile ? 14 : 16),
+                ),
+                const SizedBox(height: 16),
+                DropdownButton<String>(
+                  value: selectedStatus,
+                  isExpanded: true,
+                  items: const [
+                    DropdownMenuItem(value: 'Beklemede', child: Text('Beklemede')),
+                    DropdownMenuItem(value: 'Onaylandı', child: Text('Onaylandı')),
+                    DropdownMenuItem(value: 'Kargoya Verildi', child: Text('Kargoya Verildi')),
+                    DropdownMenuItem(value: 'Teslim Edildi', child: Text('Teslim Edildi')),
+                    DropdownMenuItem(value: 'İptal Edildi', child: Text('İptal Edildi')),
+                  ],
+                  onChanged: _isUpdating ? null : (value) {
+                    if (value != null) {
+                      setState(() {
+                        selectedStatus = value;
+                      });
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: _isUpdating ? null : () => Navigator.pop(context),
+              child: const Text('İptal'),
+            ),
+            ElevatedButton(
+              onPressed: _isUpdating ? null : () async {
             // Mevcut status'u kontrol et (İngilizce veya Türkçe olabilir)
             final currentStatus = _convertToTurkish(widget.orderCurrentStatus);
             
@@ -727,8 +940,10 @@ class _OrderStatusDialogState extends State<_OrderStatusDialog> {
                   ),
                 )
               : const Text('Güncelle'),
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 }

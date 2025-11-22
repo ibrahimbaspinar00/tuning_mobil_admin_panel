@@ -1,6 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'dart:io';
+import 'dart:async';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:html' as html;
 import 'model/admin_product.dart';
 import 'services/admin_service.dart';
+import 'services/audit_log_service.dart';
+import 'services/permission_service.dart';
+import 'widgets/professional_image_uploader.dart';
 
 class WebAdminSimpleProducts extends StatefulWidget {
   const WebAdminSimpleProducts({super.key});
@@ -13,12 +23,18 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
   final AdminService _adminService = AdminService();
   List<AdminProduct> _products = [];
   List<AdminProduct> _filteredProducts = [];
+  List<AdminProduct> _displayedProducts = []; // Pagination için
   bool _isLoading = false;
   String _searchQuery = '';
   String _sortBy = 'name';
   String _sortOrder = 'asc';
   String _selectedCategory = 'Tümü';
   bool _showOnlyLowStock = false;
+  
+  // Pagination
+  static const int _itemsPerPage = 20;
+  int _currentPage = 0;
+  bool _hasMore = true;
 
   @override
   void initState() {
@@ -195,9 +211,22 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
                       )
                     : ListView.builder(
                         padding: EdgeInsets.all(16),
-                        itemCount: _filteredProducts.length,
+                        itemCount: _displayedProducts.length + (_hasMore ? 1 : 0),
                         itemBuilder: (context, index) {
-                          final product = _filteredProducts[index];
+                          // Load more indicator
+                          if (index == _displayedProducts.length) {
+                            return Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child: ElevatedButton(
+                                  onPressed: _loadMoreProducts,
+                                  child: Text('Daha Fazla Yükle (${_filteredProducts.length - _displayedProducts.length} kaldı)'),
+                                ),
+                              ),
+                            );
+                          }
+                          
+                          final product = _displayedProducts[index];
                           return Card(
                             margin: EdgeInsets.only(bottom: 8),
                             child: ListTile(
@@ -308,13 +337,35 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
           case 'category':
             comparison = a.category.compareTo(b.category);
             break;
-          case 'createdAt':
-            comparison = a.createdAt.compareTo(b.createdAt);
-            break;
+          default:
+            comparison = a.name.compareTo(b.name);
         }
         return _sortOrder == 'asc' ? comparison : -comparison;
       });
+      
+      // Pagination reset
+      _currentPage = 0;
+      _updateDisplayedProducts();
     });
+  }
+  
+  void _updateDisplayedProducts() {
+    final startIndex = _currentPage * _itemsPerPage;
+    final endIndex = (startIndex + _itemsPerPage).clamp(0, _filteredProducts.length);
+    
+    setState(() {
+      _displayedProducts = _filteredProducts.sublist(0, endIndex);
+      _hasMore = endIndex < _filteredProducts.length;
+    });
+  }
+  
+  void _loadMoreProducts() {
+    if (!_hasMore || _isLoading) return;
+    
+    setState(() {
+      _currentPage++;
+    });
+    _updateDisplayedProducts();
   }
 
   bool _hasActiveFilters() {
@@ -504,6 +555,21 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
   Future<void> _addProduct(AdminProduct product) async {
     try {
       await _adminService.addProduct(product);
+      
+      // Audit log
+      final userId = PermissionService.getCurrentUserId() ?? 'unknown';
+      await AuditLogService.logAction(
+        userId: userId,
+        action: 'create',
+        resource: 'product',
+        details: {
+          'productId': product.id,
+          'productName': product.name,
+          'price': product.price,
+          'stock': product.stock,
+        },
+      );
+      
       _loadProducts();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -522,6 +588,21 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
   Future<void> _updateProduct(AdminProduct product) async {
     try {
       await _adminService.updateProduct(product.id, product);
+      
+      // Audit log
+      final userId = PermissionService.getCurrentUserId() ?? 'unknown';
+      await AuditLogService.logAction(
+        userId: userId,
+        action: 'update',
+        resource: 'product',
+        details: {
+          'productId': product.id,
+          'productName': product.name,
+          'price': product.price,
+          'stock': product.stock,
+        },
+      );
+      
       _loadProducts();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -540,6 +621,19 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
   Future<void> _deleteProduct(AdminProduct product) async {
     try {
       await _adminService.deleteProduct(product.id);
+      
+      // Audit log
+      final userId = PermissionService.getCurrentUserId() ?? 'unknown';
+      await AuditLogService.logAction(
+        userId: userId,
+        action: 'delete',
+        resource: 'product',
+        details: {
+          'productId': product.id,
+          'productName': product.name,
+        },
+      );
+      
       _loadProducts();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -576,6 +670,10 @@ class _ProductDialogState extends State<_ProductDialog> {
   final _stockController = TextEditingController();
   final _categoryController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final AdminService _adminService = AdminService();
+  
+  String? _uploadedImageUrl;
+  final GlobalKey<ProfessionalImageUploaderState> _imageUploaderKey = GlobalKey();
 
   @override
   void initState() {
@@ -586,7 +684,18 @@ class _ProductDialogState extends State<_ProductDialog> {
       _stockController.text = widget.product!.stock.toString();
       _categoryController.text = widget.product!.category;
       _descriptionController.text = widget.product!.description;
+      _uploadedImageUrl = widget.product!.imageUrl.isNotEmpty ? widget.product!.imageUrl : null;
     }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _priceController.dispose();
+    _stockController.dispose();
+    _categoryController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
   }
 
   @override
@@ -599,6 +708,31 @@ class _ProductDialogState extends State<_ProductDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Profesyonel Resim Yükleme Widget'ı
+              ProfessionalImageUploader(
+                key: _imageUploaderKey,
+                label: 'Ürün Resmi',
+                initialImageUrl: _uploadedImageUrl,
+                productId: widget.product?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+                aspectRatio: 1.0, // Kare format
+                autoUpload: false, // Manuel yükleme
+                onImageUploaded: (imageUrl) {
+                  setState(() {
+                    _uploadedImageUrl = imageUrl;
+                  });
+                },
+                onError: (error) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Hata: $error'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: 'Ürün Adı'),
@@ -647,8 +781,231 @@ class _ProductDialogState extends State<_ProductDialog> {
     );
   }
 
-  void _saveProduct() {
+  Future<void> _pickImage() async {
+    // Artık ProfessionalImageUploader widget'ı kullanılıyor
+    // Bu fonksiyon kullanılmıyor ama geriye dönük uyumluluk için bırakıldı
+  }
+
+  Future<void> _uploadImage() async {
+    // Artık ProfessionalImageUploader widget'ı kullanılıyor
+    // Bu fonksiyon kullanılmıyor ama geriye dönük uyumluluk için bırakıldı
+  }
+
+  Future<String> _uploadWebImage(html.File file, String productId) async {
+    try {
+      debugPrint('📤 Firebase Storage\'a yükleniyor...');
+      debugPrint('Dosya adı: ${file.name}, Boyut: ${file.size} bytes, Tip: ${file.type}');
+      
+      // Firebase Storage instance'ı kontrol et
+      final storage = FirebaseStorage.instance;
+      debugPrint('Storage bucket: ${storage.app.options.storageBucket}');
+      
+      final String fileName = 'product_images/$productId/${DateTime.now().millisecondsSinceEpoch}.jpg';
+      debugPrint('Dosya yolu: $fileName');
+      
+      final ref = storage.ref().child(fileName);
+      debugPrint('Reference oluşturuldu: ${ref.fullPath}');
+      
+      // Blob oluştur
+      debugPrint('Blob oluşturuluyor...');
+      final blob = file.slice(0, file.size, file.type);
+      debugPrint('Blob oluşturuldu, boyut: ${file.size} bytes');
+      
+      // Basit metadata
+      final metadata = SettableMetadata(
+        contentType: 'image/jpeg',
+      );
+      
+      debugPrint('Yükleme başlatılıyor (putBlob ile)...');
+      final uploadTask = ref.putBlob(blob, metadata);
+      
+      // Progress tracking için StreamSubscription
+      StreamSubscription? progressSubscription;
+      
+      try {
+        progressSubscription = uploadTask.snapshotEvents.listen(
+          (snapshot) {
+            if (snapshot.totalBytes > 0) {
+              final progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              debugPrint('📊 Yükleme ilerlemesi: ${progress.toStringAsFixed(1)}% (${snapshot.bytesTransferred}/${snapshot.totalBytes} bytes)');
+            }
+            if (snapshot.state == TaskState.success) {
+              debugPrint('✅ Upload başarıyla tamamlandı');
+            } else if (snapshot.state == TaskState.error) {
+              debugPrint('❌ Upload state: error');
+            }
+          },
+          onError: (error) {
+            debugPrint('❌ Progress listener hatası: $error');
+          },
+        );
+        
+        debugPrint('Upload task bekleniyor (max 120 saniye)...');
+        final snapshot = await uploadTask.timeout(
+          const Duration(seconds: 120),
+          onTimeout: () {
+            debugPrint('❌ Zaman aşımı! Upload iptal ediliyor...');
+            uploadTask.cancel();
+            throw Exception(
+              'Yükleme zaman aşımına uğradı (120 saniye).\n'
+              'Muhtemel nedenler:\n'
+              '1. Firebase Storage kuralları yazma izni vermiyor\n'
+              '2. İnternet bağlantısı yavaş\n'
+              '3. Firebase Storage bucket yapılandırması eksik\n\n'
+              'Çözüm: Firebase Console > Storage > Rules bölümünden kuralları kontrol edin.'
+            );
+          },
+        );
+        
+        await progressSubscription.cancel();
+        progressSubscription = null;
+        
+        debugPrint('✅ Upload tamamlandı');
+        debugPrint('Transferred: ${snapshot.bytesTransferred} / ${snapshot.totalBytes} bytes');
+        debugPrint('State: ${snapshot.state}');
+        
+        if (snapshot.state != TaskState.success) {
+          throw Exception('Upload başarısız oldu. State: ${snapshot.state}');
+        }
+        
+        debugPrint('Download URL alınıyor...');
+        final downloadUrl = await snapshot.ref.getDownloadURL().timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            throw Exception('Download URL alınamadı (zaman aşımı)');
+          },
+        );
+        debugPrint('✅ Download URL: $downloadUrl');
+        
+        return downloadUrl;
+      } finally {
+        // Progress subscription'ı temizle
+        await progressSubscription?.cancel();
+      }
+    } on FirebaseException catch (e, stackTrace) {
+      debugPrint('❌ Firebase Storage hatası:');
+      debugPrint('   Code: ${e.code}');
+      debugPrint('   Message: ${e.message}');
+      debugPrint('   Plugin: ${e.plugin}');
+      debugPrint('Stack trace: $stackTrace');
+      
+      String errorMessage = 'Firebase Storage hatası: ';
+      switch (e.code) {
+        case 'storage/unauthorized':
+          errorMessage = '❌ Yükleme izni yok!\n\n'
+              'Çözüm:\n'
+              '1. Google Cloud Console\'a gidin: https://console.cloud.google.com/storage?project=tuning-app-789ce\n'
+              '2. Storage API\'yi etkinleştirin\n'
+              '3. Bir bucket oluşturun (varsayılan bucket: tuning-app-789ce.firebasestorage.app)\n'
+              '4. Firebase Console > Storage > Rules bölümünden izinleri kontrol edin';
+          break;
+        case 'storage/canceled':
+          errorMessage = '❌ Yükleme iptal edildi.';
+          break;
+        case 'storage/unknown':
+          errorMessage = '❌ Firebase Storage henüz etkinleştirilmemiş!\n\n'
+              'Çözüm:\n'
+              '1. Google Cloud Console\'a gidin: https://console.cloud.google.com/storage?project=tuning-app-789ce\n'
+              '2. "Cloud Storage API"yi etkinleştirin\n'
+              '3. "Create bucket" butonuna tıklayın\n'
+              '4. Bucket adı: tuning-app-789ce.firebasestorage.app (veya başka bir isim)\n'
+              '5. Location: us-central1 (veya size yakın bir bölge)\n'
+              '6. Storage class: Standard\n'
+              '7. "Create" butonuna tıklayın';
+          break;
+        case 'storage/invalid-argument':
+          errorMessage = '❌ Geçersiz dosya formatı. Lütfen JPEG veya PNG formatında bir resim seçin.';
+          break;
+        case 'storage/quota-exceeded':
+          errorMessage = '❌ Firebase Storage kotası dolmuş. Lütfen Firebase Console\'dan kontrol edin.';
+          break;
+        case 'storage/object-not-found':
+          errorMessage = '❌ Storage bucket bulunamadı!\n\n'
+              'Çözüm: Google Cloud Console\'dan Storage bucket\'ı oluşturun:\n'
+              'https://console.cloud.google.com/storage?project=tuning-app-789ce';
+          break;
+        default:
+          if (e.message?.contains('bucket') == true || e.message?.contains('not found') == true) {
+            errorMessage = '❌ Firebase Storage bucket henüz oluşturulmamış!\n\n'
+                'Adımlar:\n'
+                '1. Google Cloud Console\'a gidin: https://console.cloud.google.com/storage?project=tuning-app-789ce\n'
+                '2. "Cloud Storage API"yi etkinleştirin (sağ üstte "Enable API" butonu)\n'
+                '3. "+ Create bucket" butonuna tıklayın\n'
+                '4. Bucket adı: tuning-app-789ce (veya başka bir isim)\n'
+                '5. "Create" butonuna tıklayın\n'
+                '6. Admin panelini yenileyin ve tekrar deneyin';
+          } else {
+            errorMessage = '❌ Firebase Storage hatası: ${e.code} - ${e.message ?? "Bilinmeyen hata"}\n\n'
+                'Eğer "bucket not found" veya "storage not enabled" hatası alıyorsanız:\n'
+                'Google Cloud Console\'dan Storage API\'yi etkinleştirin ve bucket oluşturun.';
+          }
+      }
+      
+      throw Exception(errorMessage);
+    } catch (e, stackTrace) {
+      debugPrint('❌ Genel resim yükleme hatası: $e');
+      debugPrint('Hata tipi: ${e.runtimeType}');
+      debugPrint('Stack trace: $stackTrace');
+      
+      String errorMessage = 'Resim yüklenirken hata oluştu: ';
+      if (e.toString().contains('timeout') || e.toString().contains('zaman aşımı')) {
+        errorMessage = '❌ Yükleme zaman aşımına uğradı. Lütfen internet bağlantınızı kontrol edin ve tekrar deneyin.';
+      } else if (e.toString().contains('permission') || e.toString().contains('unauthorized')) {
+        errorMessage = '❌ Yükleme izni yok! Firebase Storage kurallarını kontrol edin.';
+      } else {
+        errorMessage = '❌ $e';
+      }
+      
+      throw Exception(errorMessage);
+    }
+  }
+
+  void _saveProduct() async {
     if (_formKey.currentState!.validate()) {
+      // Fotoğraf yüklenmemişse önce yükle
+      String finalImageUrl = _uploadedImageUrl ?? '';
+      
+      if (_imageUploaderKey.currentState != null) {
+        final uploaderState = _imageUploaderKey.currentState!;
+        
+        // Eğer fotoğraf seçilmiş ama yüklenmemişse, önce yükle
+        if (uploaderState.hasUnuploadedImage) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('📤 Fotoğraf yükleniyor, lütfen bekleyin...'),
+                backgroundColor: Colors.blue,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+          
+          try {
+            final uploadedUrl = await uploaderState.ensureImageUploaded();
+            if (uploadedUrl != null && uploadedUrl.isNotEmpty) {
+              finalImageUrl = uploadedUrl;
+              setState(() {
+                _uploadedImageUrl = uploadedUrl;
+              });
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('❌ Fotoğraf yüklenirken hata: $e'),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+            }
+            return; // Hata varsa kaydetme
+          }
+        } else if (uploaderState.uploadedImageUrl != null) {
+          finalImageUrl = uploaderState.uploadedImageUrl!;
+        }
+      }
+      
+      // Ürün oluştur ve kaydet
       final product = AdminProduct(
         id: widget.product?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
         name: _nameController.text,
@@ -656,14 +1013,16 @@ class _ProductDialogState extends State<_ProductDialog> {
         price: double.parse(_priceController.text),
         stock: int.parse(_stockController.text),
         category: _categoryController.text,
-        imageUrl: '',
-        isActive: true,
+        imageUrl: finalImageUrl,
+        isActive: widget.product?.isActive ?? true,
         createdAt: widget.product?.createdAt ?? DateTime.now(),
         updatedAt: DateTime.now(),
       );
       
       widget.onSave(product);
-      Navigator.pop(context);
+      if (mounted) {
+        Navigator.pop(context);
+      }
     }
   }
 }

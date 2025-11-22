@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'services/notification_service.dart';
+import 'services/fcm_service.dart';
 import 'model/notification.dart';
 import 'web_admin_notification_history.dart';
 
@@ -13,6 +14,7 @@ class WebAdminNotifications extends StatefulWidget {
 
 class _WebAdminNotificationsState extends State<WebAdminNotifications> {
   final NotificationService _notificationService = NotificationService();
+  final FCMService _fcmService = FCMService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
   final _formKey = GlobalKey<FormState>();
@@ -610,7 +612,29 @@ class _WebAdminNotificationsState extends State<WebAdminNotifications> {
                 )
               : null,
         );
+        
+        // Firestore'a kaydet
         await _notificationService.addNotification(notification);
+        
+        // FCM push notification gönder (token varsa) - hata olursa devam et
+        if (_selectedUserId != null) {
+          try {
+            await _fcmService.sendToUser(
+              userId: _selectedUserId!,
+              title: _titleController.text,
+              body: _bodyController.text,
+              imageUrl: _imageUrlController.text.isNotEmpty ? _imageUrlController.text : null,
+              data: {
+                'type': _selectedType,
+                'notificationId': notification.id,
+                if (notification.actionUrl != null) 'actionUrl': notification.actionUrl,
+              },
+            );
+          } catch (fcmError) {
+            // FCM hatası olsa bile bildirim Firestore'a kaydedildi
+            debugPrint('FCM gönderim hatası (bildirim Firestore\'a kaydedildi): $fcmError');
+          }
+        }
       }
 
       // Formu temizle
@@ -624,15 +648,31 @@ class _WebAdminNotificationsState extends State<WebAdminNotifications> {
       _scheduledDate = null;
       _scheduledTime = null;
 
+      // Bildirim durumunu kontrol et ve kullanıcıya bildir
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_selectedTarget == 'all' 
-                ? 'Bildirim tüm kullanıcılara başarıyla gönderildi!' 
-                : 'Bildirim başarıyla gönderildi!'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        // Belirli kullanıcıya gönderildiğinde FCM sonucunu göster
+        if (_selectedTarget == 'specific' && _selectedUserId != null) {
+          final tokens = await _fcmService.getUserFCMTokens(_selectedUserId!);
+          if (tokens.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('⚠️ Kullanıcının FCM token\'ı yok. Bildirim sadece Firestore\'a kaydedildi.'),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 5),
+              ),
+            );
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(_selectedTarget == 'all' 
+                  ? '✅ Bildirim Firestore\'a kaydedildi!\n📱 Push notification durumu yukarıdaki mesajda gösterilecek'
+                  : '✅ Bildirim Firestore\'a kaydedildi!\n📱 Mobil uygulama bildirimi alacak'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -695,9 +735,91 @@ class _WebAdminNotificationsState extends State<WebAdminNotifications> {
       // Batch'i commit et
       await batch.commit();
       
-      // Bildirim kullanıcılara gönderildi
+      // FCM push notification gönder (tüm kullanıcılara) - hata olursa devam et
+      try {
+        final fcmResult = await _fcmService.sendToAllUsers(
+          title: _titleController.text,
+          body: _bodyController.text,
+          imageUrl: _imageUrlController.text.isNotEmpty ? _imageUrlController.text : null,
+          data: {
+            'type': _selectedType,
+            if (_actionUrlController.text.isNotEmpty) 'actionUrl': _actionUrlController.text,
+          },
+        );
+        
+        // FCM sonuçlarını göster
+        if (mounted) {
+          final successCount = fcmResult['successCount'] ?? 0;
+          final failureCount = fcmResult['failureCount'] ?? 0;
+          final tokenCount = fcmResult['tokenCount'] ?? 0;
+          
+          String message;
+          Color bgColor;
+          
+          if (tokenCount > 0 && successCount == 0) {
+            // Server Key yok veya HTTP API başarısız
+            message = '⚠️ ${tokenCount} token bulundu ama push notification gönderilemedi!\n\n'
+                '💡 Çözüm: Admin Panel > Ayarlar > FCM Push Notification Ayarları\n'
+                '→ FCM Server Key ekleyin (Firebase Console\'dan alın)\n\n'
+                '✅ Bildirim Firestore\'a kaydedildi';
+            bgColor = Colors.orange;
+          } else if (successCount > 0) {
+            message = '✅ Bildirim başarıyla gönderildi!\n'
+                '${successCount} başarılı, ${failureCount} başarısız';
+            bgColor = Colors.green;
+          } else {
+            message = 'ℹ️ Bildirim durumu: ${tokenCount} token bulundu, '
+                '${fcmResult['noTokenCount'] ?? 0} kullanıcının token\'ı yok';
+            bgColor = Colors.blue;
+          }
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: bgColor,
+              duration: const Duration(seconds: 8),
+              action: tokenCount > 0 && successCount == 0
+                  ? SnackBarAction(
+                      label: 'Bilgi',
+                      textColor: Colors.white,
+                      onPressed: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Cloud Functions deploy edilmediği için push notification çalışmıyor. '
+                              'Bildirimler sadece Firestore\'a kaydediliyor. Mobil uygulama Firestore\'dan dinleyip bildirim gösterebilir.',
+                            ),
+                            duration: Duration(seconds: 10),
+                          ),
+                        );
+                      },
+                    )
+                  : null,
+            ),
+          );
+          
+          debugPrint('FCM Sonuçları: $fcmResult');
+        }
+      } catch (fcmError) {
+        // FCM hatası olsa bile bildirim Firestore'a kaydedildi
+        debugPrint('FCM gönderim hatası (bildirim Firestore\'a kaydedildi): $fcmError');
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('FCM hatası: $fcmError. Bildirim Firestore\'a kaydedildi.'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+      
+      // Bildirim Firestore'a kaydedildi ve FCM push gönderildi (varsa)
+      // Mobil uygulamalar Firestore listener ile bildirimleri alacak
     } catch (e) {
       // Tüm kullanıcılara bildirim gönderilemedi
+      debugPrint('Bildirim gönderme hatası: $e');
       rethrow;
     }
   }

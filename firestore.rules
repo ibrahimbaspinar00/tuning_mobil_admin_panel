@@ -1,0 +1,144 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function: Kullanıcı giriş yapmış mı kontrol et
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Helper function: Kullanıcı kendi verilerine mi erişiyor?
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // ==================== ADMIN COLLECTIONS ====================
+    // Admin panel için özel koleksiyonlar - tam erişim
+    match /admin_users/{document=**} {
+      allow read, write: if true;
+    }
+    
+    match /admin_settings/{document=**} {
+      allow read, write: if true;
+    }
+    
+    match /balance_transactions/{document=**} {
+      allow read, write: if true;
+    }
+    
+    match /rate_limit_logs/{document=**} {
+      allow read, write: if true;
+    }
+    
+    match /audit_logs/{document=**} {
+      allow read, write: if true;
+    }
+    
+    match /fcm_tokens/{document=**} {
+      allow read, write: if true;
+    }
+    
+    match /product_reviews/{document=**} {
+      allow read, write: if true;
+    }
+    
+    // ==================== USERS COLLECTION ====================
+    // Kullanıcılar koleksiyonu - hem mobil hem admin panel erişimi
+    match /users/{userId} {
+      // Admin panel için tam erişim, mobil uygulama için kendi kontrolü
+      allow read: if isOwner(userId) || true;
+      allow create: if isOwner(userId) || true;
+      allow update: if isOwner(userId) || true;
+      allow delete: if isOwner(userId) || true;
+      
+      // ==================== USERS SUBCOLLECTIONS ====================
+      
+      match /favorites/{favoriteId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      match /cart/{cartItemId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      match /addresses/{addressId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      match /paymentMethods/{paymentMethodId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      match /wallet/{walletDoc} {
+        allow read, write: if isOwner(userId);
+        
+        match /transactions/{transactionId} {
+          allow read, write: if isOwner(userId);
+        }
+      }
+      
+      match /notifications/{notificationId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+    
+    // ==================== ORDERS COLLECTION ====================
+    // Siparişler koleksiyonu - admin panel için tam erişim
+    match /orders/{orderId} {
+      // Admin panel için tam erişim (mobil uygulama kendi kontrolünü yapar)
+      allow read: if true;
+      allow create: if (isSignedIn() && request.resource.data.userId == request.auth.uid) || true;
+      allow update: if true;
+      allow delete: if true;
+    }
+    
+    // ==================== PRODUCTS COLLECTION ====================
+    // Ürünler koleksiyonu - admin panel için tam erişim
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    
+    // ==================== COLLECTIONS COLLECTION ====================
+    match /collections/{collectionId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+    
+    // ==================== NOTIFICATIONS COLLECTION ====================
+    // Bildirimler koleksiyonu - admin panel için tam erişim
+    match /notifications/{notificationId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if true;
+    }
+    
+    // ==================== CAMPAIGNS COLLECTION ====================
+    match /campaigns/{campaignId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    
+    // ==================== CATEGORIES COLLECTION ====================
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if true;
+    }
+    
+    // ==================== REVIEWS COLLECTION ====================
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if (isSignedIn() && request.resource.data.userId == request.auth.uid) || true;
+      allow update: if (isSignedIn() && resource.data.userId == request.auth.uid) || true;
+      allow delete: if (isSignedIn() && resource.data.userId == request.auth.uid) || true;
+    }
+    
+    // Diğer tüm koleksiyonlar için varsayılan: erişim yok
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import '../model/mobile_user.dart';
 
 class MobileUserService {
@@ -8,17 +9,19 @@ class MobileUserService {
   Stream<List<MobileUser>> getUsers() {
     return _firestore
         .collection('users')
-        .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) {
+      final users = snapshot.docs.map((doc) {
         try {
           return MobileUser.fromFirestore(doc.data(), doc.id);
         } catch (e) {
           // Eğer veri yapısı uyumsuzsa null döndür ve filtrele
+          debugPrint('⚠️ Kullanıcı parse hatası: $e');
           return null;
         }
       }).whereType<MobileUser>().toList();
+      users.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return users;
     });
   }
 

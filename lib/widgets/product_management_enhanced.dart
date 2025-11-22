@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:firebase_storage/firebase_storage.dart';
+import 'dart:html' as html;
 import '../model/admin_product.dart';
 import '../services/admin_service.dart';
+import 'professional_image_uploader.dart';
 
 class ProductManagementEnhanced extends StatefulWidget {
   const ProductManagementEnhanced({super.key});
@@ -114,6 +121,19 @@ class _ProductManagementEnhancedState extends State<ProductManagementEnhanced> {
             // Alt satır - Görünüm ve seçenekler
             Row(
               children: [
+                // Ürün ekle butonu
+                ElevatedButton.icon(
+                  onPressed: () => _showAddProductDialog(context),
+                  icon: Icon(Icons.add),
+                  label: Text('Yeni Ürün'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+                
+                SizedBox(width: 16),
+                
                 // Görünüm modu
                 SegmentedButton<String>(
                   segments: const [
@@ -368,7 +388,13 @@ class _ProductManagementEnhancedState extends State<ProductManagementEnhanced> {
                             SizedBox(width: 8),
                             PopupMenuButton<String>(
                               onSelected: (value) {
-                                // İşlem seçildi
+                                if (value == 'edit') {
+                                  _showEditProductDialog(context, product);
+                                } else if (value == 'delete') {
+                                  _showDeleteDialog(context, product);
+                                } else if (value == 'duplicate') {
+                                  _duplicateProduct(product);
+                                }
                               },
                               itemBuilder: (context) => [
                                 PopupMenuItem(value: 'edit', child: Text('Düzenle')),
@@ -428,6 +454,342 @@ class _ProductManagementEnhancedState extends State<ProductManagementEnhanced> {
       case 'status': return 'Durum';
       case 'actions': return 'İşlemler';
       default: return key;
+    }
+  }
+
+  void _showAddProductDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => _ProductDialog(
+        onSave: _addProduct,
+      ),
+    );
+  }
+
+  void _showEditProductDialog(BuildContext context, AdminProduct product) {
+    showDialog(
+      context: context,
+      builder: (context) => _ProductDialog(
+        product: product,
+        onSave: _updateProduct,
+      ),
+    );
+  }
+
+  void _showDeleteDialog(BuildContext context, AdminProduct product) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Ürünü Sil'),
+        content: Text('${product.name} ürününü silmek istediğinizden emin misiniz?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('İptal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteProduct(product);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: Text('Sil'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addProduct(AdminProduct product) async {
+    try {
+      await _adminService.addProduct(product);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ürün başarıyla eklendi'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Hata: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _updateProduct(AdminProduct product) async {
+    try {
+      await _adminService.updateProduct(product.id, product);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ürün başarıyla güncellendi'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Hata: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteProduct(AdminProduct product) async {
+    try {
+      await _adminService.deleteProduct(product.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Ürün başarıyla silindi'), backgroundColor: Colors.green),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Hata: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _duplicateProduct(AdminProduct product) async {
+    final duplicatedProduct = AdminProduct(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      name: '${product.name} (Kopya)',
+      description: product.description,
+      price: product.price,
+      stock: product.stock,
+      category: product.category,
+      imageUrl: product.imageUrl,
+      isActive: product.isActive,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+    
+    await _addProduct(duplicatedProduct);
+  }
+}
+
+class _ProductDialog extends StatefulWidget {
+  final AdminProduct? product;
+  final Function(AdminProduct) onSave;
+
+  const _ProductDialog({
+    this.product,
+    required this.onSave,
+  });
+
+  @override
+  State<_ProductDialog> createState() => _ProductDialogState();
+}
+
+class _ProductDialogState extends State<_ProductDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  final _priceController = TextEditingController();
+  final _stockController = TextEditingController();
+  final _categoryController = TextEditingController();
+  final AdminService _adminService = AdminService();
+  
+  String? _uploadedImageUrl;
+  final GlobalKey<ProfessionalImageUploaderState> _imageUploaderKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.product != null) {
+      _nameController.text = widget.product!.name;
+      _descriptionController.text = widget.product!.description;
+      _priceController.text = widget.product!.price.toString();
+      _stockController.text = widget.product!.stock.toString();
+      _categoryController.text = widget.product!.category;
+      _uploadedImageUrl = widget.product!.imageUrl.isNotEmpty ? widget.product!.imageUrl : null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descriptionController.dispose();
+    _priceController.dispose();
+    _stockController.dispose();
+    _categoryController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.product == null ? 'Yeni Ürün' : 'Ürün Düzenle'),
+      content: SingleChildScrollView(
+        child: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Profesyonel Resim Yükleme Widget'ı
+              ProfessionalImageUploader(
+                key: _imageUploaderKey,
+                label: 'Ürün Resmi',
+                initialImageUrl: _uploadedImageUrl,
+                productId: widget.product?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+                aspectRatio: 1.0, // Kare format
+                autoUpload: false, // Manuel yükleme
+                onImageUploaded: (imageUrl) {
+                  setState(() {
+                    _uploadedImageUrl = imageUrl;
+                  });
+                },
+                onError: (error) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Hata: $error'),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                  }
+                },
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _nameController,
+                decoration: const InputDecoration(labelText: 'Ürün Adı'),
+                validator: (value) => value?.isEmpty == true ? 'Ürün adı gerekli' : null,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _descriptionController,
+                decoration: const InputDecoration(labelText: 'Açıklama'),
+                maxLines: 3,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _priceController,
+                decoration: const InputDecoration(labelText: 'Fiyat (₺)'),
+                keyboardType: TextInputType.number,
+                validator: (value) => value?.isEmpty == true ? 'Fiyat gerekli' : null,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _stockController,
+                decoration: const InputDecoration(labelText: 'Stok Miktarı'),
+                keyboardType: TextInputType.number,
+                validator: (value) => value?.isEmpty == true ? 'Stok gerekli' : null,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _categoryController,
+                decoration: const InputDecoration(labelText: 'Kategori'),
+                validator: (value) => value?.isEmpty == true ? 'Kategori gerekli' : null,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('İptal'),
+        ),
+        ElevatedButton(
+          onPressed: _saveProduct,
+          child: const Text('Kaydet'),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _pickImage() async {
+    // Artık ProfessionalImageUploader widget'ı kullanılıyor
+  }
+
+  Future<void> _uploadImage() async {
+    // Artık ProfessionalImageUploader widget'ı kullanılıyor
+  }
+
+  Future<String> _uploadWebImage(html.File file, String productId) async {
+    try {
+      final storage = FirebaseStorage.instance;
+      final String fileName = 'products/$productId/${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final ref = storage.ref().child(fileName);
+      
+      final uploadTask = ref.putBlob(
+        file.slice(0, file.size, file.type),
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+      
+      final snapshot = await uploadTask;
+      final downloadUrl = await snapshot.ref.getDownloadURL();
+      
+      return downloadUrl;
+    } catch (e) {
+      throw Exception('Web resim yükleme hatası: $e');
+    }
+  }
+
+  void _saveProduct() async {
+    if (_formKey.currentState!.validate()) {
+      // Fotoğraf yüklenmemişse önce yükle
+      String finalImageUrl = _uploadedImageUrl ?? '';
+      
+      if (_imageUploaderKey.currentState != null) {
+        final uploaderState = _imageUploaderKey.currentState!;
+        
+        // Eğer fotoğraf seçilmiş ama yüklenmemişse, önce yükle
+        if (uploaderState.hasUnuploadedImage) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('📤 Fotoğraf yükleniyor, lütfen bekleyin...'),
+                backgroundColor: Colors.blue,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+          
+          try {
+            final uploadedUrl = await uploaderState.ensureImageUploaded();
+            if (uploadedUrl != null && uploadedUrl.isNotEmpty) {
+              finalImageUrl = uploadedUrl;
+              setState(() {
+                _uploadedImageUrl = uploadedUrl;
+              });
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('❌ Fotoğraf yüklenirken hata: $e'),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 3),
+                ),
+              );
+            }
+            return; // Hata varsa kaydetme
+          }
+        } else if (uploaderState.uploadedImageUrl != null) {
+          finalImageUrl = uploaderState.uploadedImageUrl!;
+        }
+      }
+      
+      final product = AdminProduct(
+        id: widget.product?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        name: _nameController.text,
+        description: _descriptionController.text,
+        price: double.parse(_priceController.text),
+        stock: int.parse(_stockController.text),
+        category: _categoryController.text,
+        imageUrl: finalImageUrl,
+        isActive: widget.product?.isActive ?? true,
+        createdAt: widget.product?.createdAt ?? DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      
+      widget.onSave(product);
+      if (mounted) {
+        Navigator.pop(context);
+      }
     }
   }
 }

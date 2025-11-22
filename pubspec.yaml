@@ -23,8 +23,22 @@ dependencies:
   # HTTP requests
   http: ^1.2.2
   
+  # Email sending
+  mailer: ^6.0.1
+  
+  # JWT for Firebase Service Account
+  jose: ^0.3.2
+  
   # Image picker (optional - for mobile admin panel)
-  image_picker: ^1.1.2
+  image_picker: ^1.2.0
+  image_cropper: ^11.0.0
+  image: ^4.3.0
+  
+  # PDF generation
+  pdf: ^3.11.1
+  
+  # File download for web
+  universal_html: ^2.2.4
 
 dev_dependencies:
   flutter_test:

@@ -8,11 +8,16 @@ void main() async {
   
   // Firebase'i başlat
   try {
+    debugPrint('🔥 Firebase başlatılıyor...');
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
-  } catch (e) {
-    debugPrint('Firebase initialization error: $e');
+    debugPrint('✅ Firebase başarıyla başlatıldı');
+  } catch (e, stackTrace) {
+    debugPrint('❌ Firebase initialization error: $e');
+    debugPrint('Stack trace: $stackTrace');
+    // Firebase başlatılamasa bile uygulamayı çalıştır
+    // (offline mode için)
   }
   
   runApp(const WebAdminApp());
