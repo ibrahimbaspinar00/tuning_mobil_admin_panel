@@ -257,6 +257,105 @@ class _WebAdminSettingsState extends State<WebAdminSettings> {
     }
   }
 
+  Future<void> _sendTestEmailSendGrid() async {
+    // Test email adresi için dialog göster
+    final emailController = TextEditingController();
+    
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Test Email Gönder'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Test email göndermek için email adresini girin:'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: emailController,
+              decoration: const InputDecoration(
+                labelText: 'Email Adresi',
+                hintText: 'test@example.com',
+                border: OutlineInputBorder(),
+              ),
+              keyboardType: TextInputType.emailAddress,
+              autofocus: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (emailController.text.trim().isNotEmpty && 
+                  emailController.text.contains('@')) {
+                Navigator.pop(context, emailController.text.trim());
+              }
+            },
+            child: const Text('Gönder'),
+          ),
+        ],
+      ),
+    );
+
+    if (result == null || result.isEmpty) {
+      return;
+    }
+
+    // Loading göster
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Test email gönderiliyor...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final response = await SendGridFreeService.sendTestEmail(result);
+      
+      if (!mounted) return;
+      Navigator.pop(context); // Loading dialog'u kapat
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(response['message'] ?? 'Bilinmeyen hata'),
+            backgroundColor: response['success'] == true ? Colors.green : Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // Loading dialog'u kapat
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Test email gönderilirken hata: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -337,17 +436,17 @@ class _WebAdminSettingsState extends State<WebAdminSettings> {
                   _buildNotificationSettingsCard(),
                   const SizedBox(height: 24),
 
-                  // FCM Server Key Kartı
-                  _buildFcmServerKeyCard(),
-                  const SizedBox(height: 24),
+                  // FCM Server Key Kartı - Gizlendi (Service Account Key yeterli)
+                  // _buildFcmServerKeyCard(),
+                  // const SizedBox(height: 24),
 
-                  // Gmail SMTP Ayarları Kartı
-                  _buildGmailSmtpCard(),
-                  const SizedBox(height: 24),
+                  // Gmail SMTP Ayarları Kartı - Gizlendi (Ayarlar kaydedildi)
+                  // _buildGmailSmtpCard(),
+                  // const SizedBox(height: 24),
 
-                  // SendGrid Ayarları Kartı
-                  _buildSendGridCard(),
-                  const SizedBox(height: 24),
+                  // SendGrid Ayarları Kartı - Gizlendi (Gmail SMTP yeterli)
+                  // _buildSendGridCard(),
+                  // const SizedBox(height: 24),
 
                   // Hakkında Kartı
                   _buildAboutCard(),
@@ -1025,18 +1124,40 @@ class _WebAdminSettingsState extends State<WebAdminSettings> {
             ),
             const SizedBox(height: 16),
             
-            ElevatedButton.icon(
-              onPressed: _sendGridApiKeyController.text.trim().isEmpty || 
-                        _sendGridSenderEmailController.text.trim().isEmpty 
-                  ? null 
-                  : _saveSendGridCredentials,
-              icon: const Icon(Icons.save),
-              label: const Text('SendGrid Ayarlarını Kaydet'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.purple[600],
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _sendGridApiKeyController.text.trim().isEmpty || 
+                              _sendGridSenderEmailController.text.trim().isEmpty 
+                        ? null 
+                        : _saveSendGridCredentials,
+                    icon: const Icon(Icons.save),
+                    label: const Text('SendGrid Ayarlarını Kaydet'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.purple[600],
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: _sendGridApiKeyController.text.trim().isEmpty || 
+                              _sendGridSenderEmailController.text.trim().isEmpty 
+                        ? null 
+                        : _sendTestEmailSendGrid,
+                    icon: const Icon(Icons.send),
+                    label: const Text('Test Email Gönder'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green[600],
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

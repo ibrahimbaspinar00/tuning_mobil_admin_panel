@@ -164,18 +164,27 @@ Tuning App Admin Paneli
     }
   }
   
-  // Test email gönder
-  static Future<bool> sendTestEmail(String email) async {
+  // Test email gönder - detaylı hata mesajı ile
+  static Future<Map<String, dynamic>> sendTestEmail(String email) async {
     try {
       print('📧 SendGrid test email gönderiliyor...');
       print('📧 Alıcı: $email');
       
+      // Email formatı kontrolü
+      if (email.trim().isEmpty || !email.contains('@')) {
+        return {
+          'success': false,
+          'message': 'Geçersiz email adresi',
+        };
+      }
+      
       // SendGrid ayarları kontrol et
       final hasCredentials = await _checkCredentials();
       if (!hasCredentials) {
-        print('❌ SendGrid ayarları yapılmamış!');
-        print('📧 Ayarlar sayfasından SendGrid API Key ve Sender Email girin');
-        return false;
+        return {
+          'success': false,
+          'message': 'SendGrid ayarları yapılmamış! Lütfen API Key ve Sender Email girin.',
+        };
       }
       
       // Kimlik bilgileri kontrol edildi, null olamazlar
@@ -192,16 +201,16 @@ Tuning App Admin Paneli
         'personalizations': [
           {
             'to': [
-              {'email': email}
+              {'email': email.trim()}
             ]
           }
         ],
         'from': {'email': senderEmail, 'name': 'Tuning App Admin'},
-        'subject': 'Test Email',
+        'subject': 'Test Email - Tuning App Admin',
         'content': [
           {
             'type': 'text/plain',
-            'value': 'Bu bir test emailidir.'
+            'value': 'Bu bir test emailidir.\n\nSendGrid ayarlarınız doğru çalışıyor! ✅'
           }
         ]
       };
@@ -214,15 +223,40 @@ Tuning App Admin Paneli
       
       if (response.statusCode == 202) {
         print('✅ SendGrid test email gönderildi!');
-        return true;
+        return {
+          'success': true,
+          'message': 'Test email başarıyla gönderildi!',
+        };
       } else {
+        // Hata mesajını parse et
+        String errorMessage = 'Bilinmeyen hata';
+        try {
+          final errorBody = jsonDecode(response.body);
+          if (errorBody is Map && errorBody.containsKey('errors')) {
+            final errors = errorBody['errors'] as List;
+            if (errors.isNotEmpty) {
+              errorMessage = errors[0]['message'] ?? 'SendGrid hatası';
+            }
+          } else {
+            errorMessage = 'HTTP ${response.statusCode}: ${response.body}';
+          }
+        } catch (e) {
+          errorMessage = 'HTTP ${response.statusCode}: ${response.body}';
+        }
+        
         print('❌ SendGrid test hatası: ${response.statusCode} ${response.body}');
-        return false;
+        return {
+          'success': false,
+          'message': 'SendGrid hatası: $errorMessage',
+        };
       }
       
     } catch (e) {
       print('❌ SendGrid test hatası: $e');
-      return false;
+      return {
+        'success': false,
+        'message': 'Bağlantı hatası: ${e.toString()}',
+      };
     }
   }
 }

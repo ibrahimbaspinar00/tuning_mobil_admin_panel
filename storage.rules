@@ -1,0 +1,28 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Ürün resimleri için yazma ve okuma izni
+    // Admin panelinden yüklenen resimler için
+    match /product_images/{allPaths=**} {
+      // Dosya boyutu kontrolü (max 5MB) ve resim formatı kontrolü
+      allow write: if request.resource.size < 5 * 1024 * 1024
+                   && (request.resource.contentType.matches('image/.*'));
+      allow read: if true;
+      allow delete: if true;
+    }
+    
+    // Products klasörü için (eski yapı uyumluluğu)
+    match /products/{allPaths=**} {
+      allow write: if request.resource.size < 5 * 1024 * 1024
+                   && (request.resource.contentType.matches('image/.*'));
+      allow read: if true;
+      allow delete: if true;
+    }
+    
+    // Diğer tüm dosyalar için varsayılan kurallar (erişim yok)
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

@@ -2,7 +2,20 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 
 // Firebase Admin SDK'yı başlat
-admin.initializeApp();
+// Production'da Firebase otomatik olarak service account kullanır
+// Local development için serviceAccountKey.json dosyası gerekli
+try {
+  // Local development için service account key dosyasını dene
+  const serviceAccount = require('./tuning-app-789ce-firebase-adminsdk-fbsvc-aa924058c5.json');
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount)
+  });
+  console.log('✅ Firebase Admin SDK Service Account ile başlatıldı (Local)');
+} catch (error) {
+  // Production'da veya dosya yoksa otomatik credentials kullan
+  admin.initializeApp();
+  console.log('✅ Firebase Admin SDK otomatik credentials ile başlatıldı (Production)');
+}
 
 /**
  * FCM push notification göndermek için Cloud Function

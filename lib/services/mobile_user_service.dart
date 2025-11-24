@@ -40,10 +40,20 @@ class MobileUserService {
     try {
       final doc = await _firestore.collection('users').doc(userId).get();
       if (doc.exists) {
-        return MobileUser.fromFirestore(doc.data()!, doc.id);
+        final data = doc.data();
+        if (data == null) {
+          throw Exception('Kullanıcı verisi boş');
+        }
+        return MobileUser.fromFirestore(data, doc.id);
       }
       return null;
     } catch (e) {
+      debugPrint('❌ getUser hatası: $e');
+      if (e.toString().contains('permission-denied') || 
+          e.toString().contains('permission denied') ||
+          e.toString().contains('Missing or insufficient permissions')) {
+        throw Exception('Firebase izin hatası: Kullanıcı verilerine erişim izniniz yok');
+      }
       throw Exception('Kullanıcı getirilirken hata oluştu: $e');
     }
   }
@@ -216,20 +226,33 @@ class MobileUserService {
         throw Exception('Bakiye miktarı pozitif olmalıdır');
       }
 
+      if (userId.isEmpty) {
+        throw Exception('Kullanıcı ID\'si geçersiz');
+      }
+
+      debugPrint('🔍 Bakiye yükleme işlemi başlatılıyor...');
+      debugPrint('   - Kullanıcı ID: $userId');
+      debugPrint('   - Miktar: $amount');
+
       final user = await getUser(userId);
       if (user == null) {
         throw Exception('Kullanıcı bulunamadı');
       }
 
       final newBalance = user.balance + amount;
+      debugPrint('   - Mevcut bakiye: ${user.balance}');
+      debugPrint('   - Yeni bakiye: $newBalance');
 
       // Kullanıcı bakiyesini güncelle
+      debugPrint('   - Bakiye güncelleniyor...');
       await _firestore.collection('users').doc(userId).update({
         'balance': newBalance,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+      debugPrint('   - Bakiye güncellendi');
 
       // Bakiye işlemini kaydet
+      debugPrint('   - İşlem kaydediliyor...');
       await _firestore.collection('balance_transactions').add({
         'userId': userId,
         'type': 'deposit',
@@ -240,7 +263,29 @@ class MobileUserService {
         'createdBy': 'admin',
         'createdAt': FieldValue.serverTimestamp(),
       });
+      debugPrint('   - İşlem kaydedildi');
+      debugPrint('✅ Bakiye yükleme işlemi tamamlandı');
     } catch (e) {
+      debugPrint('❌ Bakiye yükleme hatası: $e');
+      final errorMsg = e.toString();
+      
+      // Firebase izin hatası kontrolü
+      if (errorMsg.contains('permission-denied') || 
+          errorMsg.contains('permission denied') ||
+          errorMsg.contains('Missing or insufficient permissions')) {
+        throw Exception('Firebase izin hatası: Bakiye işlemleri için gerekli izinler yapılandırılmamış. Lütfen Firebase Console\'dan Firestore Rules\'ı kontrol edin.');
+      }
+      
+      // Network hatası kontrolü
+      if (errorMsg.contains('network') || errorMsg.contains('connection') || errorMsg.contains('timeout')) {
+        throw Exception('Bağlantı hatası: İnternet bağlantınızı kontrol edin ve tekrar deneyin.');
+      }
+      
+      // Diğer hatalar için orijinal mesajı koru
+      if (errorMsg.contains('Bakiye yüklenirken hata oluştu')) {
+        rethrow;
+      }
+      
       throw Exception('Bakiye yüklenirken hata oluştu: $e');
     }
   }
@@ -252,24 +297,38 @@ class MobileUserService {
         throw Exception('Miktar pozitif olmalıdır');
       }
 
+      if (userId.isEmpty) {
+        throw Exception('Kullanıcı ID\'si geçersiz');
+      }
+
+      debugPrint('🔍 Bakiye çekme işlemi başlatılıyor...');
+      debugPrint('   - Kullanıcı ID: $userId');
+      debugPrint('   - Miktar: $amount');
+
       final user = await getUser(userId);
       if (user == null) {
         throw Exception('Kullanıcı bulunamadı');
       }
 
+      debugPrint('   - Mevcut bakiye: ${user.balance}');
+
       if (user.balance < amount) {
-        throw Exception('Yetersiz bakiye');
+        throw Exception('Yetersiz bakiye. Mevcut bakiye: ₺${user.balance.toStringAsFixed(2)}, İstenen: ₺${amount.toStringAsFixed(2)}');
       }
 
       final newBalance = user.balance - amount;
+      debugPrint('   - Yeni bakiye: $newBalance');
 
       // Kullanıcı bakiyesini güncelle
+      debugPrint('   - Bakiye güncelleniyor...');
       await _firestore.collection('users').doc(userId).update({
         'balance': newBalance,
         'updatedAt': FieldValue.serverTimestamp(),
       });
+      debugPrint('   - Bakiye güncellendi');
 
       // Bakiye işlemini kaydet
+      debugPrint('   - İşlem kaydediliyor...');
       await _firestore.collection('balance_transactions').add({
         'userId': userId,
         'type': 'withdrawal',
@@ -280,7 +339,29 @@ class MobileUserService {
         'createdBy': 'admin',
         'createdAt': FieldValue.serverTimestamp(),
       });
+      debugPrint('   - İşlem kaydedildi');
+      debugPrint('✅ Bakiye çekme işlemi tamamlandı');
     } catch (e) {
+      debugPrint('❌ Bakiye çekme hatası: $e');
+      final errorMsg = e.toString();
+      
+      // Firebase izin hatası kontrolü
+      if (errorMsg.contains('permission-denied') || 
+          errorMsg.contains('permission denied') ||
+          errorMsg.contains('Missing or insufficient permissions')) {
+        throw Exception('Firebase izin hatası: Bakiye işlemleri için gerekli izinler yapılandırılmamış. Lütfen Firebase Console\'dan Firestore Rules\'ı kontrol edin.');
+      }
+      
+      // Network hatası kontrolü
+      if (errorMsg.contains('network') || errorMsg.contains('connection') || errorMsg.contains('timeout')) {
+        throw Exception('Bağlantı hatası: İnternet bağlantınızı kontrol edin ve tekrar deneyin.');
+      }
+      
+      // Diğer hatalar için orijinal mesajı koru
+      if (errorMsg.contains('Bakiye çekilirken hata oluştu')) {
+        rethrow;
+      }
+      
       throw Exception('Bakiye çekilirken hata oluştu: $e');
     }
   }

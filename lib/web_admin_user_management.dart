@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'model/admin_user.dart';
 import 'services/admin_service.dart';
@@ -343,9 +344,9 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
 
         return GridView.builder(
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
+            crossAxisCount: 5,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
             childAspectRatio: 1.1,
           ),
           itemCount: users.length,
@@ -373,16 +374,17 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
       ),
       child: InkWell(
         onTap: () => _showUserDetails(user),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(10),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Row(
                 children: [
                   CircleAvatar(
-                    radius: 28,
+                    radius: 14,
                     backgroundColor: roleColor.withValues(alpha: 0.2),
                     child: Text(
                       user.fullName.isNotEmpty
@@ -391,13 +393,13 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                       style: TextStyle(
                         color: roleColor,
                         fontWeight: FontWeight.bold,
-                        fontSize: 20,
+                        fontSize: 12,
                       ),
                     ),
                   ),
                   const Spacer(),
                   PopupMenuButton<String>(
-                    icon: Icon(Icons.more_vert, color: Colors.grey[600]),
+                    icon: Icon(Icons.more_vert, color: Colors.grey[600], size: 14),
                     onSelected: (value) => _handleMenuAction(value, user),
                     itemBuilder: (context) => [
                       if (PermissionService.canUpdateUsers())
@@ -405,7 +407,7 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                           value: 'edit',
                           child: Row(
                             children: [
-                              Icon(Icons.edit, size: 20),
+                              Icon(Icons.edit, size: 18),
                               SizedBox(width: 8),
                               Text('Düzenle'),
                             ],
@@ -417,7 +419,7 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                           children: [
                             Icon(
                               user.isActive ? Icons.block : Icons.check_circle,
-                              size: 20,
+                              size: 18,
                             ),
                             const SizedBox(width: 8),
                             Text(user.isActive ? 'Pasifleştir' : 'Aktifleştir'),
@@ -431,7 +433,7 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                           value: 'delete',
                           child: Row(
                             children: [
-                              Icon(Icons.delete, size: 20, color: Colors.red),
+                              Icon(Icons.delete, size: 18, color: Colors.red),
                               SizedBox(width: 8),
                               Text('Sil', style: TextStyle(color: Colors.red)),
                             ],
@@ -441,64 +443,67 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 6),
               Text(
                 user.fullName,
                 style: const TextStyle(
-                  fontSize: 18,
+                  fontSize: 12,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF1E293B),
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 user.email,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: 9,
                   color: Colors.grey[600],
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 12),
-              Row(
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 3,
+                runSpacing: 3,
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
+                      horizontal: 5,
+                      vertical: 2,
                     ),
                     decoration: BoxDecoration(
                       color: roleColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
                       _getRoleDisplayName(user.role),
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 8,
                         color: roleColor,
                         fontWeight: FontWeight.w600,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
+                      horizontal: 5,
+                      vertical: 2,
                     ),
                     decoration: BoxDecoration(
                       color: user.isActive
                           ? Colors.green.withValues(alpha: 0.1)
                           : Colors.grey.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
                       user.isActive ? 'Aktif' : 'Pasif',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 8,
                         color: user.isActive ? Colors.green : Colors.grey,
                         fontWeight: FontWeight.w600,
                       ),
@@ -618,7 +623,9 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
       context: context,
       builder: (context) => _UserDialog(
         user: null,
-        onSave: (user) => _addUser(user),
+        onSave: (user) async {
+          await _addUser(user);
+        },
       ),
     );
   }
@@ -628,7 +635,9 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
       context: context,
       builder: (context) => _UserDialog(
         user: user,
-        onSave: (updatedUser) => _updateUser(updatedUser),
+        onSave: (updatedUser) async {
+          await _updateUser(updatedUser);
+        },
       ),
     );
   }
@@ -733,6 +742,8 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
             ),
           );
         }
+        // Hata durumunda exception fırlat ki dialog açık kalsın
+        rethrow;
       }
     }
   }
@@ -811,6 +822,8 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
             ),
           );
         }
+        // Hata durumunda exception fırlat ki dialog açık kalsın
+        rethrow;
       }
     }
   }
@@ -933,7 +946,7 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
 
 class _UserDialog extends StatefulWidget {
   final AdminUser? user;
-  final Function(AdminUser) onSave;
+  final Future<void> Function(AdminUser) onSave;
 
   const _UserDialog({
     required this.user,
@@ -950,8 +963,15 @@ class _UserDialogState extends State<_UserDialog> {
   final _emailController = TextEditingController();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _adminService = AdminService();
   String _selectedRole = 'user';
   bool _isActive = true;
+  
+  // Kullanıcı adı validasyon durumu
+  bool? _isUsernameAvailable;
+  bool _isCheckingUsername = false;
+  Timer? _usernameCheckTimer;
+  String? _usernameError;
 
   @override
   void initState() {
@@ -963,15 +983,91 @@ class _UserDialogState extends State<_UserDialog> {
       _selectedRole = widget.user!.role.toLowerCase();
       _isActive = widget.user!.isActive;
     }
+    
+    // Kullanıcı adı değişikliklerini dinle
+    _usernameController.addListener(_onUsernameChanged);
   }
 
   @override
   void dispose() {
+    _usernameCheckTimer?.cancel();
     _nameController.dispose();
     _emailController.dispose();
+    _usernameController.removeListener(_onUsernameChanged);
     _usernameController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  void _onUsernameChanged() {
+    // Debounce: Kullanıcı yazmayı bıraktıktan 500ms sonra kontrol et
+    _usernameCheckTimer?.cancel();
+    _usernameError = null;
+    _isUsernameAvailable = null;
+    
+    final username = _usernameController.text.trim();
+    
+    if (username.isEmpty) {
+      setState(() {
+        _isCheckingUsername = false;
+        _isUsernameAvailable = null;
+      });
+      return;
+    }
+    
+    setState(() {
+      _isCheckingUsername = true;
+    });
+    
+    _usernameCheckTimer = Timer(const Duration(milliseconds: 500), () {
+      _checkUsernameAvailability(username);
+    });
+  }
+
+  Future<void> _checkUsernameAvailability(String username) async {
+    if (username.trim().isEmpty) {
+      setState(() {
+        _isCheckingUsername = false;
+        _isUsernameAvailable = null;
+      });
+      return;
+    }
+    
+    // Düzenleme modunda ve kullanıcı adı değişmemişse kontrol etme
+    if (widget.user != null && username.trim() == widget.user!.username) {
+      setState(() {
+        _isCheckingUsername = false;
+        _isUsernameAvailable = true; // Kendi kullanıcı adı, müsait say
+        _usernameError = null;
+      });
+      return;
+    }
+    
+    try {
+      final isAvailable = await _adminService.isUsernameAvailable(
+        username,
+        excludeUserId: widget.user?.id,
+      );
+      
+      if (mounted) {
+        setState(() {
+          _isCheckingUsername = false;
+          _isUsernameAvailable = isAvailable;
+          if (!isAvailable) {
+            _usernameError = 'Bu kullanıcı adı zaten kullanılıyor';
+          } else {
+            _usernameError = null;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isCheckingUsername = false;
+          _isUsernameAvailable = null;
+        });
+      }
+    }
   }
 
   @override
@@ -1020,13 +1116,38 @@ class _UserDialogState extends State<_UserDialog> {
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _usernameController,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Kullanıcı Adı',
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: _isCheckingUsername
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: Padding(
+                              padding: EdgeInsets.all(12.0),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          )
+                        : _isUsernameAvailable == true
+                            ? const Icon(Icons.check_circle, color: Colors.green)
+                            : _isUsernameAvailable == false
+                                ? const Icon(Icons.error, color: Colors.red)
+                                : null,
+                    errorText: _usernameError,
                   ),
+                  onChanged: (value) {
+                    // Validator'ı tetikle
+                    _formKey.currentState?.validate();
+                  },
                   validator: (value) {
-                    if (value == null || value.isEmpty) {
+                    if (value == null || value.trim().isEmpty) {
                       return 'Kullanıcı adı gerekli';
+                    }
+                    if (_isUsernameAvailable == false) {
+                      return 'Bu kullanıcı adı zaten kullanılıyor';
+                    }
+                    if (_isCheckingUsername) {
+                      return 'Kontrol ediliyor...';
                     }
                     return null;
                   },
@@ -1102,38 +1223,71 @@ class _UserDialogState extends State<_UserDialog> {
     );
   }
 
-  void _saveUser() {
-    if (_formKey.currentState!.validate()) {
-      if (widget.user == null && _passwordController.text.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Yeni kullanıcı için şifre gereklidir'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      final password = widget.user == null
-          ? _passwordController.text
-          : (_passwordController.text.isNotEmpty
-              ? _passwordController.text
-              : widget.user!.password);
-
-      final user = AdminUser(
-        id: widget.user?.id ?? '',
-        username: _usernameController.text.trim(),
-        email: _emailController.text.trim(),
-        fullName: _nameController.text.trim(),
-        role: _selectedRole,
-        password: password,
-        isActive: _isActive,
-        createdAt: widget.user?.createdAt ?? DateTime.now(),
-        lastLogin: widget.user?.lastLogin ?? DateTime.now(),
+  Future<void> _saveUser() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    
+    // Kullanıcı adı kontrolü devam ediyorsa bekle
+    if (_isCheckingUsername) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Lütfen kullanıcı adı kontrolünün tamamlanmasını bekleyin'),
+          backgroundColor: Colors.orange,
+        ),
       );
+      return;
+    }
+    
+    // Kullanıcı adı müsait değilse hata göster
+    if (_isUsernameAvailable == false) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Bu kullanıcı adı zaten kullanılıyor. Lütfen farklı bir kullanıcı adı seçin'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    
+    if (widget.user == null && _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Yeni kullanıcı için şifre gereklidir'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
-      widget.onSave(user);
-      Navigator.pop(context);
+    final password = widget.user == null
+        ? _passwordController.text
+        : (_passwordController.text.isNotEmpty
+            ? _passwordController.text
+            : widget.user!.password);
+
+    final user = AdminUser(
+      id: widget.user?.id ?? '',
+      username: _usernameController.text.trim(),
+      email: _emailController.text.trim(),
+      fullName: _nameController.text.trim(),
+      role: _selectedRole,
+      password: password,
+      isActive: _isActive,
+      createdAt: widget.user?.createdAt ?? DateTime.now(),
+      lastLogin: widget.user?.lastLogin ?? DateTime.now(),
+    );
+
+    // Dialog'u kapatmadan önce kaydetmeyi dene
+    // Başarılı olursa dialog kapanacak, hata olursa açık kalacak
+    try {
+      await widget.onSave(user);
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      // Hata durumunda dialog açık kalır, form verileri korunur
+      // Hata mesajı zaten _addUser veya _updateUser'da gösteriliyor
     }
   }
 }

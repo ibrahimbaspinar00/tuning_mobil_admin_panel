@@ -454,10 +454,10 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
   Widget _buildUserGrid(List<MobileUser> users) {
     return GridView.builder(
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 16,
-        mainAxisSpacing: 16,
-        childAspectRatio: 1.0,
+        crossAxisCount: 5,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 1.1,
       ),
       itemCount: users.length,
       itemBuilder: (context, index) {
@@ -482,16 +482,17 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
       ),
       child: InkWell(
         onTap: () => _showUserDetails(user),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(10),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Row(
                 children: [
                   CircleAvatar(
-                    radius: 28,
+                    radius: 14,
                     backgroundColor: const Color(0xFF6366F1),
                     backgroundImage: user.avatarUrl != null && user.avatarUrl!.isNotEmpty
                         ? NetworkImage(user.avatarUrl!)
@@ -506,21 +507,21 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
-                              fontSize: 20,
+                              fontSize: 12,
                             ),
                           )
                         : null,
                   ),
                   const Spacer(),
                   PopupMenuButton<String>(
-                    icon: Icon(Icons.more_vert, color: Colors.grey[600]),
+                    icon: Icon(Icons.more_vert, color: Colors.grey[600], size: 14),
                     onSelected: (value) => _handleMenuAction(value, user),
                     itemBuilder: (context) => [
                       const PopupMenuItem(
                         value: 'edit',
                         child: Row(
                           children: [
-                            Icon(Icons.edit, size: 20),
+                            Icon(Icons.edit, size: 18),
                             SizedBox(width: 8),
                             Text('Düzenle'),
                           ],
@@ -530,7 +531,7 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
                         value: 'balance',
                         child: Row(
                           children: [
-                            Icon(Icons.account_balance_wallet, size: 20),
+                            Icon(Icons.account_balance_wallet, size: 18),
                             SizedBox(width: 8),
                             Text('Bakiye İşlemleri'),
                           ],
@@ -543,7 +544,7 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
                           children: [
                             Icon(
                               user.isActive ? Icons.block : Icons.check_circle,
-                              size: 20,
+                              size: 18,
                             ),
                             const SizedBox(width: 8),
                             Text(user.isActive ? 'Pasifleştir' : 'Aktifleştir'),
@@ -556,7 +557,7 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
                           children: [
                             Icon(
                               user.isFrozen ? Icons.lock_open : Icons.lock,
-                              size: 20,
+                              size: 18,
                             ),
                             const SizedBox(width: 8),
                             Text(user.isFrozen ? 'Donmayı Kaldır' : 'Hesabı Dondur'),
@@ -568,7 +569,7 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
                         value: 'close',
                         child: Row(
                           children: [
-                            Icon(Icons.delete_outline, size: 20, color: Colors.red),
+                            Icon(Icons.delete_outline, size: 18, color: Colors.red),
                             SizedBox(width: 8),
                             Text('Hesabı Kapat', style: TextStyle(color: Colors.red)),
                           ],
@@ -578,42 +579,34 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 6),
               Text(
                 user.fullName ?? user.username ?? user.email ?? 'İsimsiz',
                 style: const TextStyle(
-                  fontSize: 18,
+                  fontSize: 12,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF1E293B),
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               if (user.email != null)
                 Text(
                   user.email!,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 9,
                     color: Colors.grey[600],
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-              if (user.phoneNumber != null)
-                Text(
-                  user.phoneNumber!,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              const Spacer(),
+              const SizedBox(height: 6),
               Container(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
                   color: const Color(0xFF10B981).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(5),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -621,14 +614,14 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
                     Text(
                       'Bakiye',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 9,
                         color: Colors.grey[600],
                       ),
                     ),
                     Text(
                       '₺${user.balance.toStringAsFixed(2)}',
                       style: const TextStyle(
-                        fontSize: 16,
+                        fontSize: 11,
                         fontWeight: FontWeight.bold,
                         color: Color(0xFF10B981),
                       ),
@@ -636,59 +629,55 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
                   ],
                 ),
               ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  if (user.isFrozen)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.red.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        'DONDURULDU',
-                        style: TextStyle(
-                          color: Colors.red,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    )
-                  else if (!user.isActive)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        'PASIF',
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    )
-                  else
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Text(
-                        'AKTIF',
-                        style: TextStyle(
-                          color: Colors.green,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+              const SizedBox(height: 4),
+              if (user.isFrozen)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'DONDURULDU',
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontSize: 7,
+                      fontWeight: FontWeight.bold,
                     ),
-                ],
-              ),
+                  ),
+                )
+              else if (!user.isActive)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'PASIF',
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 7,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text(
+                    'AKTIF',
+                    style: TextStyle(
+                      color: Colors.green,
+                      fontSize: 7,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -1602,12 +1591,55 @@ class _BalanceDialogState extends State<_BalanceDialog> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Hata: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        final errorMsg = e.toString();
+        final isPermissionError = errorMsg.contains('permission-denied') || 
+                                  errorMsg.contains('permission denied') ||
+                                  errorMsg.contains('Missing or insufficient permissions') ||
+                                  errorMsg.contains('Firebase izin hatası');
+        
+        if (isPermissionError) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Row(
+                children: [
+                  Icon(Icons.error, color: Colors.red),
+                  SizedBox(width: 8),
+                  Text('Firebase İzin Hatası'),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Firebase Firestore izinleri yapılandırılmamış. Lütfen aşağıdaki adımları izleyin:',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildStep('1', 'Firebase Console\'a gidin'),
+                  _buildStep('2', 'Firestore Database > Rules'),
+                  _buildStep('3', 'firestore.rules dosyasındaki kuralları yapıştırın'),
+                  _buildStep('4', 'Publish butonuna tıklayın'),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Tamam'),
+                ),
+              ],
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Hata: ${errorMsg.replaceAll('Exception: ', '')}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
       }
     } finally {
       if (mounted) {
@@ -1616,6 +1648,42 @@ class _BalanceDialogState extends State<_BalanceDialog> {
         });
       }
     }
+  }
+
+  Widget _buildStep(String number, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: Colors.blue,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                number,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

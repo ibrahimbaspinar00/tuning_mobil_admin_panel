@@ -46,4 +46,9 @@ app.*.map.json
 
 # Node modules
 **/node_modules/
-functions/node_modules/
+functions/node_modules
+
+# Firebase Service Account Keys (GÜVENLİK - ASLA COMMIT ETMEYİN!)
+functions/*-firebase-adminsdk-*.json
+functions/serviceAccountKey.json
+functions/*serviceAccount*.json/

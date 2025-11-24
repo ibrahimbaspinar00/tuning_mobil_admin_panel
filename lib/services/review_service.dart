@@ -9,9 +9,10 @@ class ReviewService {
 
   // Firestore verisini ProductReview için hazırla (Timestamp'leri DateTime'a çevir)
   static Map<String, dynamic> _prepareReviewData(Map<String, dynamic> data, String docId) {
+    // Önce data'yı kopyala, sonra ID'yi ekle (ID her zaman docId olmalı)
     final processedData = <String, dynamic>{
-      'id': docId,
       ...data,
+      'id': docId, // ID'yi en son ekle ki override edilmesin
     };
     
     // Timestamp'leri String'e çevir
@@ -33,6 +34,11 @@ class ReviewService {
     
     if (data['adminResponseDate'] != null && data['adminResponseDate'] is Timestamp) {
       processedData['adminResponseDate'] = (data['adminResponseDate'] as Timestamp).toDate().toIso8601String();
+    }
+    
+    // ID'nin boş olmadığından emin ol
+    if (processedData['id'] == null || (processedData['id'] as String).isEmpty) {
+      processedData['id'] = docId;
     }
     
     return processedData;
@@ -224,7 +230,7 @@ class ReviewService {
     }
   }
 
-  // Yorum sil
+  // Yorum sil (kullanıcı için)
   static Future<bool> deleteReview(String reviewId) async {
     try {
       final user = _auth.currentUser;
@@ -258,28 +264,170 @@ class ReviewService {
     }
   }
 
-  // Admin: Yorum onayla/reddet
-  static Future<bool> approveReview(String reviewId, bool isApproved) async {
+  // Admin: Yorum sil
+  static Future<bool> deleteReviewAdmin(String reviewId) async {
     try {
-      // Firestore Timestamp kullan
-      await _firestore.collection(_collectionName).doc(reviewId).update({
-        'isApproved': isApproved,
-        'updatedAt': Timestamp.now(),
-      });
+      if (reviewId.trim().isEmpty) {
+        throw Exception('Yorum ID\'si geçersiz veya boş');
+      }
+
+      print('🔍 Admin yorum silme işlemi başlatılıyor...');
+      print('   - Yorum ID: "$reviewId"');
+
+      // Yorumun var olup olmadığını kontrol et
+      final reviewDoc = await _firestore.collection(_collectionName).doc(reviewId.trim()).get();
+      if (!reviewDoc.exists) {
+        throw Exception('Yorum bulunamadı');
+      }
+
+      final reviewData = reviewDoc.data();
+      if (reviewData == null) {
+        throw Exception('Yorum verisi boş');
+      }
+
+      final productId = reviewData['productId'] as String?;
+      
+      // Yorumu sil
+      print('   - Yorum siliniyor...');
+      await _firestore.collection(_collectionName).doc(reviewId.trim()).delete();
+      print('   - Yorum silindi');
 
       // Ürünün ortalama rating'ini güncelle
-      final reviewDoc = await _firestore.collection(_collectionName).doc(reviewId).get();
-      if (reviewDoc.exists) {
-        final productId = reviewDoc.data()?['productId'];
-        if (productId != null) {
+      if (productId != null && productId.isNotEmpty) {
+        print('   - Ürün rating\'i güncelleniyor...');
+        try {
           await _updateProductRating(productId);
+          print('   - Ürün rating\'i güncellendi');
+        } catch (ratingError) {
+          // Rating güncelleme hatası kritik değil, sadece logla
+          print('⚠️ Ürün rating güncellenirken hata (devam ediliyor): $ratingError');
         }
       }
 
+      print('✅ Yorum başarıyla silindi');
       return true;
     } catch (e) {
-      print('Yorum onay durumu güncellenirken hata oluştu: $e');
-      return false;
+      print('❌ Yorum silme hatası: $e');
+      final errorMsg = e.toString();
+      
+      // Firebase izin hatası kontrolü
+      if (errorMsg.contains('permission-denied') || 
+          errorMsg.contains('permission denied') ||
+          errorMsg.contains('Missing or insufficient permissions')) {
+        throw Exception('Firebase izin hatası: Yorum işlemleri için gerekli izinler yapılandırılmamış. Lütfen Firebase Console\'dan Firestore Rules\'ı kontrol edin.');
+      }
+      
+      // Network hatası kontrolü
+      if (errorMsg.contains('network') || errorMsg.contains('connection') || errorMsg.contains('timeout')) {
+        throw Exception('Bağlantı hatası: İnternet bağlantınızı kontrol edin ve tekrar deneyin.');
+      }
+      
+      // Diğer hatalar için orijinal mesajı koru
+      if (e is Exception) {
+        rethrow;
+      }
+      
+      throw Exception('Yorum silinirken hata oluştu: $e');
+    }
+  }
+
+  // Ürün adını ID'ye göre getir
+  static Future<String?> getProductName(String productId) async {
+    try {
+      if (productId.trim().isEmpty) {
+        return null;
+      }
+
+      final productDoc = await _firestore.collection('products').doc(productId.trim()).get();
+      if (productDoc.exists) {
+        final data = productDoc.data();
+        return data?['name'] as String?;
+      }
+      return null;
+    } catch (e) {
+      print('Ürün adı getirilirken hata: $e');
+      return null;
+    }
+  }
+
+  // Admin: Yorum onayla/reddet
+  static Future<bool> approveReview(String reviewId, bool isApproved) async {
+    try {
+      // ID kontrolü - trim ve boş kontrolü
+      final trimmedId = reviewId.trim();
+      if (trimmedId.isEmpty) {
+        print('❌ Yorum ID boş: "$reviewId"');
+        throw Exception('Yorum ID\'si geçersiz veya boş');
+      }
+      
+      print('🔍 Yorum onay durumu güncelleniyor...');
+      print('   - Yorum ID: "$trimmedId"');
+      print('   - Onay durumu: $isApproved');
+
+      print('🔍 Yorum onay durumu güncelleniyor...');
+      print('   - Yorum ID: $reviewId');
+      print('   - Onay durumu: $isApproved');
+
+      // Önce yorumun var olup olmadığını kontrol et
+      final reviewDoc = await _firestore.collection(_collectionName).doc(trimmedId).get();
+      if (!reviewDoc.exists) {
+        throw Exception('Yorum bulunamadı');
+      }
+
+      final reviewData = reviewDoc.data();
+      if (reviewData == null) {
+        throw Exception('Yorum verisi boş');
+      }
+
+      final productId = reviewData['productId'] as String?;
+      if (productId == null || productId.isEmpty) {
+        throw Exception('Ürün ID\'si bulunamadı');
+      }
+
+      print('   - Ürün ID: $productId');
+
+      // Firestore Timestamp kullan
+      print('   - Yorum durumu güncelleniyor...');
+      await _firestore.collection(_collectionName).doc(trimmedId).update({
+        'isApproved': isApproved,
+        'updatedAt': Timestamp.now(),
+      });
+      print('   - Yorum durumu güncellendi');
+
+      // Ürünün ortalama rating'ini güncelle
+      print('   - Ürün rating\'i güncelleniyor...');
+      try {
+        await _updateProductRating(productId);
+        print('   - Ürün rating\'i güncellendi');
+      } catch (ratingError) {
+        // Rating güncelleme hatası kritik değil, sadece logla
+        print('⚠️ Ürün rating güncellenirken hata (devam ediliyor): $ratingError');
+      }
+
+      print('✅ Yorum onay durumu başarıyla güncellendi');
+      return true;
+    } catch (e) {
+      print('❌ Yorum onay durumu güncellenirken hata oluştu: $e');
+      final errorMsg = e.toString();
+      
+      // Firebase izin hatası kontrolü
+      if (errorMsg.contains('permission-denied') || 
+          errorMsg.contains('permission denied') ||
+          errorMsg.contains('Missing or insufficient permissions')) {
+        throw Exception('Firebase izin hatası: Yorum işlemleri için gerekli izinler yapılandırılmamış. Lütfen Firebase Console\'dan Firestore Rules\'ı kontrol edin.');
+      }
+      
+      // Network hatası kontrolü
+      if (errorMsg.contains('network') || errorMsg.contains('connection') || errorMsg.contains('timeout')) {
+        throw Exception('Bağlantı hatası: İnternet bağlantınızı kontrol edin ve tekrar deneyin.');
+      }
+      
+      // Diğer hatalar için orijinal mesajı koru
+      if (e is Exception) {
+        rethrow;
+      }
+      
+      throw Exception('Yorum onay durumu güncellenirken hata oluştu: $e');
     }
   }
 
@@ -289,16 +437,108 @@ class ReviewService {
     required String adminResponse,
   }) async {
     try {
-      await _firestore.collection(_collectionName).doc(reviewId).update({
-        'adminResponse': adminResponse,
+      // ID kontrolü - trim ve boş kontrolü
+      final trimmedId = reviewId.trim();
+      if (trimmedId.isEmpty) {
+        print('❌ Yorum ID boş: "$reviewId"');
+        throw Exception('Yorum ID\'si geçersiz veya boş');
+      }
+
+      if (adminResponse.trim().isEmpty) {
+        throw Exception('Yanıt metni boş olamaz');
+      }
+
+      print('🔍 Admin yanıtı ekleniyor...');
+      print('   - Yorum ID: "$trimmedId"');
+
+      // Yorumun var olup olmadığını kontrol et
+      final reviewDoc = await _firestore.collection(_collectionName).doc(trimmedId).get();
+      if (!reviewDoc.exists) {
+        throw Exception('Yorum bulunamadı');
+      }
+
+      final existingResponse = reviewDoc.data()?['adminResponse'];
+      final isUpdate = existingResponse != null && existingResponse.toString().isNotEmpty;
+
+      await _firestore.collection(_collectionName).doc(trimmedId).update({
+        'adminResponse': adminResponse.trim(),
         'adminResponseDate': Timestamp.now(),
         'updatedAt': Timestamp.now(),
       });
 
+      print('✅ Admin yanıtı başarıyla ${isUpdate ? 'güncellendi' : 'eklendi'}');
       return true;
     } catch (e) {
-      print('Admin yanıtı eklenirken hata oluştu: $e');
-      return false;
+      print('❌ Admin yanıtı eklenirken hata oluştu: $e');
+      final errorMsg = e.toString();
+      
+      // Firebase izin hatası kontrolü
+      if (errorMsg.contains('permission-denied') || 
+          errorMsg.contains('permission denied') ||
+          errorMsg.contains('Missing or insufficient permissions')) {
+        throw Exception('Firebase izin hatası: Yorum işlemleri için gerekli izinler yapılandırılmamış. Lütfen Firebase Console\'dan Firestore Rules\'ı kontrol edin.');
+      }
+      
+      // Network hatası kontrolü
+      if (errorMsg.contains('network') || errorMsg.contains('connection') || errorMsg.contains('timeout')) {
+        throw Exception('Bağlantı hatası: İnternet bağlantınızı kontrol edin ve tekrar deneyin.');
+      }
+      
+      // Diğer hatalar için orijinal mesajı koru
+      if (e is Exception) {
+        rethrow;
+      }
+      
+      throw Exception('Admin yanıtı eklenirken hata oluştu: $e');
+    }
+  }
+
+  // Admin: Admin yanıtını sil
+  static Future<bool> deleteAdminResponse(String reviewId) async {
+    try {
+      if (reviewId.trim().isEmpty) {
+        throw Exception('Yorum ID\'si geçersiz veya boş');
+      }
+
+      print('🔍 Admin yanıtı siliniyor...');
+      print('   - Yorum ID: "$reviewId"');
+
+      // Yorumun var olup olmadığını kontrol et
+      final reviewDoc = await _firestore.collection(_collectionName).doc(reviewId.trim()).get();
+      if (!reviewDoc.exists) {
+        throw Exception('Yorum bulunamadı');
+      }
+
+      await _firestore.collection(_collectionName).doc(reviewId.trim()).update({
+        'adminResponse': FieldValue.delete(),
+        'adminResponseDate': FieldValue.delete(),
+        'updatedAt': Timestamp.now(),
+      });
+
+      print('✅ Admin yanıtı başarıyla silindi');
+      return true;
+    } catch (e) {
+      print('❌ Admin yanıtı silinirken hata oluştu: $e');
+      final errorMsg = e.toString();
+      
+      // Firebase izin hatası kontrolü
+      if (errorMsg.contains('permission-denied') || 
+          errorMsg.contains('permission denied') ||
+          errorMsg.contains('Missing or insufficient permissions')) {
+        throw Exception('Firebase izin hatası: Yorum işlemleri için gerekli izinler yapılandırılmamış. Lütfen Firebase Console\'dan Firestore Rules\'ı kontrol edin.');
+      }
+      
+      // Network hatası kontrolü
+      if (errorMsg.contains('network') || errorMsg.contains('connection') || errorMsg.contains('timeout')) {
+        throw Exception('Bağlantı hatası: İnternet bağlantınızı kontrol edin ve tekrar deneyin.');
+      }
+      
+      // Diğer hatalar için orijinal mesajı koru
+      if (e is Exception) {
+        rethrow;
+      }
+      
+      throw Exception('Admin yanıtı silinirken hata oluştu: $e');
     }
   }
 
@@ -318,11 +558,27 @@ class ReviewService {
       return querySnapshot.docs
           .map((doc) {
             final data = doc.data() as Map<String, dynamic>?;
-            if (data == null) return null;
-            return ProductReview.fromJson(_prepareReviewData(
-              data,
-              doc.id,
-            ));
+            if (data == null) {
+              print('⚠️ Yorum verisi null: ${doc.id}');
+              return null;
+            }
+            
+            // ID kontrolü
+            if (doc.id.isEmpty) {
+              print('⚠️ Yorum ID boş: ${doc.id}');
+              return null;
+            }
+            
+            final preparedData = _prepareReviewData(data, doc.id);
+            final review = ProductReview.fromJson(preparedData);
+            
+            // ID'nin doğru şekilde set edildiğini kontrol et
+            if (review.id.isEmpty) {
+              print('⚠️ Review ID boş oluşturuldu. Doc ID: ${doc.id}, Prepared data ID: ${preparedData['id']}');
+              return null;
+            }
+            
+            return review;
           })
           .whereType<ProductReview>()
           .toList();
@@ -335,9 +591,24 @@ class ReviewService {
   // Ürünün ortalama rating'ini güncelle
   static Future<void> _updateProductRating(String productId) async {
     try {
+      if (productId.isEmpty) {
+        print('⚠️ Ürün ID boş, rating güncellenemiyor');
+        return;
+      }
+
+      print('   🔄 Ürün rating hesaplanıyor...');
       final reviews = await getProductReviews(productId);
       final averageRating = ProductReview.calculateAverageRating(reviews);
       final totalReviews = reviews.length;
+
+      print('   📊 Hesaplanan rating: $averageRating, Toplam yorum: $totalReviews');
+
+      // Ürünün var olup olmadığını kontrol et
+      final productDoc = await _firestore.collection('products').doc(productId).get();
+      if (!productDoc.exists) {
+        print('⚠️ Ürün bulunamadı, rating güncellenemiyor: $productId');
+        return;
+      }
 
       // Ürünün rating bilgilerini güncelle
       await _firestore.collection('products').doc(productId).update({
@@ -345,8 +616,11 @@ class ReviewService {
         'totalReviews': totalReviews,
         'lastRatingUpdate': DateTime.now().toIso8601String(),
       });
+      print('   ✅ Ürün rating güncellendi');
     } catch (e) {
-      print('Ürün rating güncellenirken hata oluştu: $e');
+      print('❌ Ürün rating güncellenirken hata oluştu: $e');
+      // Rating güncelleme hatası kritik değil, sadece logla
+      // Exception fırlatma, ana işlemi etkilemesin
     }
   }
 

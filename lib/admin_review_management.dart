@@ -17,6 +17,7 @@ class _AdminReviewManagementState extends State<AdminReviewManagement> {
   bool _isLoading = true;
   String _selectedFilter = 'all'; // all, approved, pending
   final TextEditingController _searchController = TextEditingController();
+  final Map<String, String> _productNames = {}; // productId -> productName cache
 
   @override
   void initState() {
@@ -37,6 +38,10 @@ class _AdminReviewManagementState extends State<AdminReviewManagement> {
 
     try {
       final reviews = await ReviewService.getAllReviews();
+      
+      // Ürün adlarını yükle
+      await _loadProductNames(reviews);
+      
       setState(() {
         _reviews = reviews;
         _filteredReviews = reviews;
@@ -48,6 +53,23 @@ class _AdminReviewManagementState extends State<AdminReviewManagement> {
           _isLoading = false;
         });
         ErrorHandler.showError(context, 'Yorumlar yüklenirken hata oluştu');
+      }
+    }
+  }
+
+  Future<void> _loadProductNames(List<ProductReview> reviews) async {
+    final productIds = reviews.map((r) => r.productId).toSet();
+    
+    for (final productId in productIds) {
+      if (productId.isNotEmpty && !_productNames.containsKey(productId)) {
+        try {
+          final productName = await ReviewService.getProductName(productId);
+          if (productName != null) {
+            _productNames[productId] = productName;
+          }
+        } catch (e) {
+          print('Ürün adı yüklenirken hata: $e');
+        }
       }
     }
   }
@@ -78,6 +100,16 @@ class _AdminReviewManagementState extends State<AdminReviewManagement> {
   }
 
   Future<void> _approveReview(ProductReview review) async {
+    // ID kontrolü
+    if (review.id.isEmpty) {
+      ErrorHandler.showError(context, 'Yorum ID\'si bulunamadı. Lütfen sayfayı yenileyin ve tekrar deneyin.');
+      return;
+    }
+
+    print('🔍 Yorum onaylama başlatılıyor...');
+    print('   - Review ID: "${review.id}"');
+    print('   - Review: ${review.toString()}');
+
     // Loading göster
     showDialog(
       context: context,
@@ -101,15 +133,36 @@ class _AdminReviewManagementState extends State<AdminReviewManagement> {
     } catch (e) {
       if (mounted) {
         Navigator.pop(context); // Loading'i kapat
-        ErrorHandler.showError(
-          context, 
-          'Yorum onaylanırken hata oluştu: ${e.toString()}',
-        );
+        
+        final errorMsg = e.toString();
+        final isPermissionError = errorMsg.contains('permission-denied') || 
+                                  errorMsg.contains('permission denied') ||
+                                  errorMsg.contains('Missing or insufficient permissions') ||
+                                  errorMsg.contains('Firebase izin hatası');
+        
+        if (isPermissionError) {
+          _showPermissionErrorDialog();
+        } else {
+          ErrorHandler.showError(
+            context, 
+            'Yorum onaylanırken hata oluştu: ${errorMsg.replaceAll('Exception: ', '')}',
+          );
+        }
       }
     }
   }
 
   Future<void> _rejectReview(ProductReview review) async {
+    // ID kontrolü
+    if (review.id.isEmpty) {
+      ErrorHandler.showError(context, 'Yorum ID\'si bulunamadı. Lütfen sayfayı yenileyin ve tekrar deneyin.');
+      return;
+    }
+
+    print('🔍 Yorum reddetme başlatılıyor...');
+    print('   - Review ID: "${review.id}"');
+    print('   - Review: ${review.toString()}');
+
     // Onay dialogu göster
     final confirmed = await showDialog<bool>(
       context: context,
@@ -158,40 +211,215 @@ class _AdminReviewManagementState extends State<AdminReviewManagement> {
     } catch (e) {
       if (mounted) {
         Navigator.pop(context); // Loading'i kapat
-        ErrorHandler.showError(
-          context, 
-          'Yorum reddedilirken hata oluştu: ${e.toString()}',
-        );
+        
+        final errorMsg = e.toString();
+        final isPermissionError = errorMsg.contains('permission-denied') || 
+                                  errorMsg.contains('permission denied') ||
+                                  errorMsg.contains('Missing or insufficient permissions') ||
+                                  errorMsg.contains('Firebase izin hatası');
+        
+        if (isPermissionError) {
+          _showPermissionErrorDialog();
+        } else {
+          ErrorHandler.showError(
+            context, 
+            'Yorum reddedilirken hata oluştu: ${errorMsg.replaceAll('Exception: ', '')}',
+          );
+        }
       }
     }
   }
 
-  void _showAdminResponseDialog(ProductReview review) {
+  void _showPermissionErrorDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.error, color: Colors.red),
+            SizedBox(width: 8),
+            Text('Firebase İzin Hatası'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Firebase Firestore izinleri yapılandırılmamış. Lütfen aşağıdaki adımları izleyin:',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            _buildStep('1', 'Firebase Console\'a gidin'),
+            _buildStep('2', 'Firestore Database > Rules'),
+            _buildStep('3', 'firestore.rules dosyasındaki kuralları yapıştırın'),
+            _buildStep('4', 'Publish butonuna tıklayın'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Tamam'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStep(String number, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: Colors.blue,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                number,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 14),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAdminResponseDialog(ProductReview review, {bool isEditing = false}) {
     final responseController = TextEditingController();
+    
+    // Eğer düzenleme modundaysa mevcut yanıtı yükle
+    if (isEditing && review.adminResponse != null) {
+      responseController.text = review.adminResponse!;
+    }
     
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Admin Yanıtı'),
+        title: Text(isEditing ? 'Admin Yanıtını Düzenle' : 'Admin Yanıtı'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Kullanıcı: ${review.userName}'),
-            const SizedBox(height: 8),
-            Text('Yorum: ${review.comment}'),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Kullanıcı: ${review.userName}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Text('Yorum: ${review.comment}'),
+                ],
+              ),
+            ),
             const SizedBox(height: 16),
             TextField(
               controller: responseController,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Admin Yanıtı',
-                hintText: 'Yanıtınızı yazın...',
-                border: OutlineInputBorder(),
+                hintText: isEditing ? 'Yanıtınızı düzenleyin...' : 'Yanıtınızı yazın...',
+                border: const OutlineInputBorder(),
               ),
-              maxLines: 3,
+              maxLines: 5,
+              autofocus: true,
             ),
+            if (isEditing && review.adminResponseDate != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Son düzenleme: ${_formatDate(review.adminResponseDate!)}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
           ],
         ),
         actions: [
+          if (isEditing && review.adminResponse != null)
+            TextButton.icon(
+              onPressed: () async {
+                // Silme onayı
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Yanıtı Sil'),
+                    content: const Text('Admin yanıtını silmek istediğinizden emin misiniz?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('İptal'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                        child: const Text('Sil'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (confirmed == true) {
+                  try {
+                    final success = await ReviewService.deleteAdminResponse(review.id);
+                    if (mounted) {
+                      Navigator.pop(context); // Ana dialog'u kapat
+                      if (success) {
+                        ErrorHandler.showSuccess(context, 'Yanıt silindi');
+                        _loadReviews();
+                      } else {
+                        ErrorHandler.showError(context, 'Yanıt silinirken hata oluştu');
+                      }
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      final errorMsg = e.toString();
+                      final isPermissionError = errorMsg.contains('permission-denied') || 
+                                                errorMsg.contains('permission denied') ||
+                                                errorMsg.contains('Missing or insufficient permissions') ||
+                                                errorMsg.contains('Firebase izin hatası');
+                      
+                      if (isPermissionError) {
+                        Navigator.pop(context); // Ana dialog'u kapat
+                        _showPermissionErrorDialog();
+                      } else {
+                        ErrorHandler.showError(
+                          context, 
+                          'Yanıt silinirken hata oluştu: ${errorMsg.replaceAll('Exception: ', '')}',
+                        );
+                      }
+                    }
+                  }
+                }
+              },
+              icon: const Icon(Icons.delete, size: 16, color: Colors.red),
+              label: const Text('Sil', style: TextStyle(color: Colors.red)),
+            ),
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('İptal'),
@@ -199,28 +427,61 @@ class _AdminReviewManagementState extends State<AdminReviewManagement> {
           ElevatedButton(
             onPressed: () async {
               if (responseController.text.trim().isNotEmpty) {
+                // Loading göster
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (context) => const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+
                 try {
                   final success = await ReviewService.respondToReview(
                     reviewId: review.id,
                     adminResponse: responseController.text.trim(),
                   );
                   if (mounted) {
+                    Navigator.pop(context); // Loading'i kapat
                     if (success) {
-                      ErrorHandler.showSuccess(context, 'Yanıt eklendi');
-                      Navigator.pop(context);
+                      ErrorHandler.showSuccess(
+                        context, 
+                        isEditing ? 'Yanıt güncellendi' : 'Yanıt eklendi',
+                      );
+                      Navigator.pop(context); // Dialog'u kapat
                       _loadReviews();
                     } else {
-                      ErrorHandler.showError(context, 'Yanıt eklenirken hata oluştu');
+                      ErrorHandler.showError(
+                        context, 
+                        isEditing ? 'Yanıt güncellenirken hata oluştu' : 'Yanıt eklenirken hata oluştu',
+                      );
                     }
                   }
                 } catch (e) {
                   if (mounted) {
-                    ErrorHandler.showError(context, e.toString());
+                    Navigator.pop(context); // Loading'i kapat
+                    final errorMsg = e.toString();
+                    final isPermissionError = errorMsg.contains('permission-denied') || 
+                                              errorMsg.contains('permission denied') ||
+                                              errorMsg.contains('Missing or insufficient permissions') ||
+                                              errorMsg.contains('Firebase izin hatası');
+                    
+                    if (isPermissionError) {
+                      Navigator.pop(context); // Dialog'u kapat
+                      _showPermissionErrorDialog();
+                    } else {
+                      ErrorHandler.showError(
+                        context, 
+                        '${isEditing ? 'Yanıt güncellenirken' : 'Yanıt eklenirken'} hata oluştu: ${errorMsg.replaceAll('Exception: ', '')}',
+                      );
+                    }
                   }
                 }
+              } else {
+                ErrorHandler.showError(context, 'Yanıt boş olamaz');
               }
             },
-            child: const Text('Gönder'),
+            child: Text(isEditing ? 'Güncelle' : 'Gönder'),
           ),
         ],
       ),
@@ -334,12 +595,21 @@ class _AdminReviewManagementState extends State<AdminReviewManagement> {
                           fontSize: 16,
                         ),
                       ),
-                      Text(
-                        'Ürün ID: ${review.productId}',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 12,
-                        ),
+                      Row(
+                        children: [
+                          Icon(Icons.shopping_bag, size: 14, color: Colors.grey[600]),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              _productNames[review.productId] ?? 'Ürün: ${review.productId}',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -402,17 +672,40 @@ class _AdminReviewManagementState extends State<AdminReviewManagement> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Admin Yanıtı:',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
+                    Row(
+                      children: [
+                        const Text(
+                          'Admin Yanıtı:',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: const Icon(Icons.edit, size: 16, color: Colors.blue),
+                          onPressed: () => _showAdminResponseDialog(review, isEditing: true),
+                          tooltip: 'Düzenle',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
                     ),
                     Text(
                       review.adminResponse!,
                       style: const TextStyle(fontSize: 13),
                     ),
+                    if (review.adminResponseDate != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tarih: ${_formatDate(review.adminResponseDate!)}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.grey[600],
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -449,15 +742,99 @@ class _AdminReviewManagementState extends State<AdminReviewManagement> {
             
             // Admin yanıt butonu
             const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: () => _showAdminResponseDialog(review),
-              icon: const Icon(Icons.reply, size: 16),
-              label: const Text('Yanıtla'),
+            Row(
+              children: [
+                TextButton.icon(
+                  onPressed: () => _showAdminResponseDialog(review),
+                  icon: const Icon(Icons.reply, size: 16),
+                  label: const Text('Yanıtla'),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () => _deleteReview(review),
+                  icon: const Icon(Icons.delete, size: 16, color: Colors.red),
+                  label: const Text('Sil', style: TextStyle(color: Colors.red)),
+                ),
+              ],
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _deleteReview(ProductReview review) async {
+    // ID kontrolü
+    if (review.id.isEmpty) {
+      ErrorHandler.showError(context, 'Yorum ID\'si bulunamadı. Lütfen sayfayı yenileyin ve tekrar deneyin.');
+      return;
+    }
+
+    // Onay dialogu göster
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Yorumu Sil'),
+        content: const Text('Bu yorumu silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // Loading göster
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    try {
+      final success = await ReviewService.deleteReviewAdmin(review.id);
+      if (mounted) {
+        Navigator.pop(context); // Loading'i kapat
+        if (success) {
+          ErrorHandler.showSuccess(context, 'Yorum başarıyla silindi');
+          await _loadReviews(); // Yorumları yeniden yükle
+        } else {
+          ErrorHandler.showError(context, 'Yorum silinirken bir hata oluştu. Lütfen tekrar deneyin.');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Loading'i kapat
+        
+        final errorMsg = e.toString();
+        final isPermissionError = errorMsg.contains('permission-denied') || 
+                                  errorMsg.contains('permission denied') ||
+                                  errorMsg.contains('Missing or insufficient permissions') ||
+                                  errorMsg.contains('Firebase izin hatası');
+        
+        if (isPermissionError) {
+          _showPermissionErrorDialog();
+        } else {
+          ErrorHandler.showError(
+            context, 
+            'Yorum silinirken hata oluştu: ${errorMsg.replaceAll('Exception: ', '')}',
+          );
+        }
+      }
+    }
   }
 
   String _formatDate(DateTime date) {

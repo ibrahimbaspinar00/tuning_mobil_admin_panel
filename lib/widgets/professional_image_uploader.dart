@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:html' as html;
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -8,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image/image.dart' as img;
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 
 class ProfessionalImageUploader extends StatefulWidget {
@@ -712,6 +714,36 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
         );
       }
     } on FirebaseException catch (e, stackTrace) {
+      // Firebase Storage hatası - Base64 fallback'e geç
+      debugPrint('⚠️ Firebase Storage hatası, Base64 fallback deneniyor...');
+      
+      try {
+        final fallbackUrl = await _uploadAsBase64(widget.productId);
+        if (fallbackUrl.isNotEmpty) {
+          setState(() {
+            _isUploading = false;
+            _uploadProgress = 1.0;
+            _currentUploadedUrl = fallbackUrl;
+          });
+          
+          widget.onImageUploaded(fallbackUrl);
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✅ Resim Base64 olarak kaydedildi (Storage kullanılamadı)'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+          return; // Başarılı, hata gösterme
+        }
+      } catch (fallbackError) {
+        debugPrint('❌ Base64 fallback de başarısız: $fallbackError');
+      }
+      
+      // Fallback de başarısız oldu, orijinal hatayı göster
       debugPrint('❌ FirebaseException: ${e.code}');
       debugPrint('   Message: ${e.message}');
       debugPrint('   StackTrace: $stackTrace');
@@ -769,7 +801,34 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
         errorMessage = 'Yükleme izni yok. Firebase Storage kurallarını kontrol edin.';
       } else if (e.toString().contains('bucket') || 
                  e.toString().contains('not found')) {
-        errorMessage = 'Firebase Storage bucket bulunamadı. Firebase Console\'dan Storage bucket oluşturun.';
+        // Storage bucket yok - Base64 fallback dene
+        debugPrint('⚠️ Storage bucket bulunamadı, Base64 fallback deneniyor...');
+        try {
+          final fallbackUrl = await _uploadAsBase64(widget.productId);
+          if (fallbackUrl.isNotEmpty) {
+            setState(() {
+              _isUploading = false;
+              _uploadProgress = 1.0;
+              _currentUploadedUrl = fallbackUrl;
+            });
+            
+            widget.onImageUploaded(fallbackUrl);
+            
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('✅ Resim Base64 olarak kaydedildi (Storage kullanılamadı)'),
+                  backgroundColor: Colors.orange,
+                  duration: Duration(seconds: 3),
+                ),
+              );
+            }
+            return; // Başarılı
+          }
+        } catch (fallbackError) {
+          debugPrint('❌ Base64 fallback başarısız: $fallbackError');
+        }
+        errorMessage = 'Firebase Storage bucket bulunamadı. Resim Base64 olarak kaydedilemedi.';
       } else {
         errorMessage = 'Yükleme hatası: ${e.toString()}\n\nLütfen Firebase Console\'dan Storage ayarlarını kontrol edin.';
       }
@@ -777,6 +836,95 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
       debugPrint('Hata mesajı: $errorMessage');
       _showError(errorMessage);
       widget.onError?.call(errorMessage);
+    }
+  }
+
+  // Base64 fallback - Resmi küçültüp Firestore'a kaydet
+  Future<String> _uploadAsBase64(String productId) async {
+    try {
+      debugPrint('📤 Base64 fallback başlatılıyor...');
+      
+      Uint8List? imageBytes;
+      
+      // Resim verisini al
+      if (kIsWeb) {
+        if (_croppedImageBytes != null) {
+          imageBytes = _croppedImageBytes;
+        } else if (_selectedWebFile != null) {
+          final reader = html.FileReader();
+          reader.readAsArrayBuffer(_selectedWebFile!);
+          await reader.onLoad.first;
+          imageBytes = reader.result as Uint8List;
+        }
+      } else {
+        if (_croppedImageBytes != null) {
+          imageBytes = _croppedImageBytes;
+        } else if (_selectedMobileFile != null) {
+          imageBytes = await _selectedMobileFile!.readAsBytes();
+        }
+      }
+      
+      if (imageBytes == null) {
+        throw Exception('Resim verisi bulunamadı');
+      }
+      
+      // Resmi decode et ve optimize et
+      img.Image? decodedImage = img.decodeImage(imageBytes);
+      if (decodedImage == null) {
+        throw Exception('Resim decode edilemedi');
+      }
+      
+      // Resmi küçült (max 800x800, kaliteyi koru)
+      int maxSize = 800;
+      if (decodedImage.width > maxSize || decodedImage.height > maxSize) {
+        double ratio = decodedImage.width > decodedImage.height
+            ? maxSize / decodedImage.width
+            : maxSize / decodedImage.height;
+        
+        decodedImage = img.copyResize(
+          decodedImage,
+          width: (decodedImage.width * ratio).toInt(),
+          height: (decodedImage.height * ratio).toInt(),
+          interpolation: img.Interpolation.linear,
+        );
+        debugPrint('📐 Resim küçültüldü: ${decodedImage.width}x${decodedImage.height}');
+      }
+      
+      // JPEG olarak encode et (kalite 85%)
+      final optimizedBytes = Uint8List.fromList(
+        img.encodeJpg(decodedImage, quality: 85)
+      );
+      
+      debugPrint('📦 Optimize edilmiş boyut: ${optimizedBytes.length} bytes');
+      
+      // Base64 string'e çevir
+      final base64String = base64Encode(optimizedBytes);
+      final dataUrl = 'data:image/jpeg;base64,$base64String';
+      
+      // Firestore'a kaydet (opsiyonel - sadece metadata için)
+      try {
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+        await FirebaseFirestore.instance
+            .collection('product_images')
+            .doc('${productId}_$timestamp')
+            .set({
+          'productId': productId,
+          'base64Data': base64String,
+          'createdAt': FieldValue.serverTimestamp(),
+          'size': optimizedBytes.length,
+        });
+        debugPrint('✅ Base64 veri Firestore\'a kaydedildi');
+      } catch (e) {
+        debugPrint('⚠️ Firestore kayıt hatası (devam ediliyor): $e');
+      }
+      
+      debugPrint('✅ Base64 URL oluşturuldu (${dataUrl.length} karakter)');
+      return dataUrl;
+      
+    } catch (e, stackTrace) {
+      debugPrint('❌ Base64 fallback hatası: $e');
+      debugPrint('Stack trace: $stackTrace');
+      rethrow;
     }
   }
 

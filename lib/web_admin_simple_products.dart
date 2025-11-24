@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:image_cropper/image_cropper.dart';
-import 'dart:io';
 import 'dart:async';
-import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:html' as html;
 import 'model/admin_product.dart';
@@ -99,81 +96,77 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
         ),
         body: Column(
           children: [
-            // Arama ve Filtre Bölümü
-            Flexible(
-              child: Container(
-                padding: EdgeInsets.all(16),
-                color: Colors.grey[100],
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Arama çubuğu
-                      TextField(
-                        onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value;
-                          });
-                          _applyFilters();
-                        },
-                        decoration: InputDecoration(
-                          hintText: 'Ürün ara...',
-                          prefixIcon: Icon(Icons.search),
-                          suffixIcon: _searchQuery.isNotEmpty
-                            ? IconButton(
-                                onPressed: () {
-                                  setState(() {
-                                    _searchQuery = '';
-                                  });
-                                  _applyFilters();
-                                },
-                                icon: Icon(Icons.clear),
-                              )
-                            : null,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          filled: true,
-                          fillColor: Colors.white,
+            // Arama ve Filtre Bölümü - Sabit yükseklik
+            Container(
+              padding: EdgeInsets.all(16),
+              color: Colors.grey[100],
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Arama çubuğu
+                  TextField(
+                    onChanged: (value) {
+                      setState(() {
+                        _searchQuery = value;
+                      });
+                      _applyFilters();
+                    },
+                    decoration: InputDecoration(
+                      hintText: 'Ürün ara...',
+                      prefixIcon: Icon(Icons.search),
+                      suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _searchQuery = '';
+                              });
+                              _applyFilters();
+                            },
+                            icon: Icon(Icons.clear),
+                          )
+                        : null,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                  ),
+                  
+                  // Filtre bilgileri
+                  if (_hasActiveFilters())
+                    Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.blue[50],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.filter_list, size: 16, color: Colors.blue),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _getFilterInfo(),
+                                style: TextStyle(color: Colors.blue[700], fontSize: 12),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _clearFilters,
+                              child: Text('Temizle', style: TextStyle(color: Colors.blue[700])),
+                            ),
+                          ],
                         ),
                       ),
-                      
-                      // Filtre bilgileri
-                      if (_hasActiveFilters())
-                        Padding(
-                          padding: EdgeInsets.only(top: 8),
-                          child: Container(
-                            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.blue[50],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.filter_list, size: 16, color: Colors.blue),
-                                SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _getFilterInfo(),
-                                    style: TextStyle(color: Colors.blue[700], fontSize: 12),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                TextButton(
-                                  onPressed: _clearFilters,
-                                  child: Text('Temizle', style: TextStyle(color: Colors.blue[700])),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+                    ),
+                ],
               ),
             ),
             
-            // Ürün listesi
+            // Ürün listesi - Kalan tüm alanı kapla
             Expanded(
               child: _isLoading 
                 ? Center(child: CircularProgressIndicator())
@@ -670,7 +663,6 @@ class _ProductDialogState extends State<_ProductDialog> {
   final _stockController = TextEditingController();
   final _categoryController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final AdminService _adminService = AdminService();
   
   String? _uploadedImageUrl;
   final GlobalKey<ProfessionalImageUploaderState> _imageUploaderKey = GlobalKey();
@@ -700,95 +692,202 @@ class _ProductDialogState extends State<_ProductDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.product == null ? 'Yeni Ürün' : 'Ürün Düzenle'),
-      content: SingleChildScrollView(
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Profesyonel Resim Yükleme Widget'ı
-              ProfessionalImageUploader(
-                key: _imageUploaderKey,
-                label: 'Ürün Resmi',
-                initialImageUrl: _uploadedImageUrl,
-                productId: widget.product?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
-                aspectRatio: 1.0, // Kare format
-                autoUpload: false, // Manuel yükleme
-                onImageUploaded: (imageUrl) {
-                  setState(() {
-                    _uploadedImageUrl = imageUrl;
-                  });
-                },
-                onError: (error) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Hata: $error'),
-                        backgroundColor: Colors.red,
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    
+    // Responsive dialog genişliği
+    final dialogWidth = screenWidth > 800 
+        ? 600.0 
+        : screenWidth > 600 
+            ? screenWidth * 0.85 
+            : screenWidth * 0.95;
+    
+    // Responsive dialog yüksekliği
+    final dialogHeight = screenHeight > 800 
+        ? 700.0 
+        : screenHeight * 0.85;
+    
+    return Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Container(
+        width: dialogWidth,
+        constraints: BoxConstraints(
+          maxHeight: dialogHeight,
+          maxWidth: dialogWidth,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Başlık
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.purple[50],
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    widget.product == null ? Icons.add_circle : Icons.edit,
+                    color: Colors.purple[700],
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.product == null ? 'Yeni Ürün' : 'Ürün Düzenle',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.purple[800],
                       ),
-                    );
-                  }
-                },
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                    tooltip: 'Kapat',
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _nameController,
-                decoration: const InputDecoration(labelText: 'Ürün Adı'),
-                validator: (value) => value?.isEmpty == true ? 'Ürün adı gerekli' : null,
+            ),
+            // İçerik
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Profesyonel Resim Yükleme Widget'ı
+                      ProfessionalImageUploader(
+                        key: _imageUploaderKey,
+                        label: 'Ürün Resmi',
+                        initialImageUrl: _uploadedImageUrl,
+                        productId: widget.product?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+                        aspectRatio: 1.0, // Kare format
+                        autoUpload: false, // Manuel yükleme
+                        onImageUploaded: (imageUrl) {
+                          setState(() {
+                            _uploadedImageUrl = imageUrl;
+                          });
+                        },
+                        onError: (error) {
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Hata: $error'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                      TextFormField(
+                        controller: _nameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Ürün Adı',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.shopping_bag),
+                        ),
+                        validator: (value) => value?.isEmpty == true ? 'Ürün adı gerekli' : null,
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _priceController,
+                              decoration: const InputDecoration(
+                                labelText: 'Fiyat (₺)',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.attach_money),
+                              ),
+                              keyboardType: TextInputType.number,
+                              validator: (value) => value?.isEmpty == true ? 'Fiyat gerekli' : null,
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _stockController,
+                              decoration: const InputDecoration(
+                                labelText: 'Stok Miktarı',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.inventory),
+                              ),
+                              keyboardType: TextInputType.number,
+                              validator: (value) => value?.isEmpty == true ? 'Stok gerekli' : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _categoryController,
+                        decoration: const InputDecoration(
+                          labelText: 'Kategori',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.category),
+                        ),
+                        validator: (value) => value?.isEmpty == true ? 'Kategori gerekli' : null,
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _descriptionController,
+                        decoration: const InputDecoration(
+                          labelText: 'Açıklama',
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.description),
+                        ),
+                        maxLines: 3,
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _priceController,
-                decoration: const InputDecoration(labelText: 'Fiyat (₺)'),
-                keyboardType: TextInputType.number,
-                validator: (value) => value?.isEmpty == true ? 'Fiyat gerekli' : null,
+            ),
+            // Alt butonlar
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(16),
+                  bottomRight: Radius.circular(16),
+                ),
               ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _stockController,
-                decoration: const InputDecoration(labelText: 'Stok Miktarı'),
-                keyboardType: TextInputType.number,
-                validator: (value) => value?.isEmpty == true ? 'Stok gerekli' : null,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('İptal'),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton(
+                    onPressed: _saveProduct,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.purple[600],
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                    child: const Text('Kaydet'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _categoryController,
-                decoration: const InputDecoration(labelText: 'Kategori'),
-                validator: (value) => value?.isEmpty == true ? 'Kategori gerekli' : null,
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _descriptionController,
-                decoration: const InputDecoration(labelText: 'Açıklama'),
-                maxLines: 3,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('İptal'),
-        ),
-        ElevatedButton(
-          onPressed: _saveProduct,
-          child: const Text('Kaydet'),
-        ),
-      ],
     );
-  }
-
-  Future<void> _pickImage() async {
-    // Artık ProfessionalImageUploader widget'ı kullanılıyor
-    // Bu fonksiyon kullanılmıyor ama geriye dönük uyumluluk için bırakıldı
-  }
-
-  Future<void> _uploadImage() async {
-    // Artık ProfessionalImageUploader widget'ı kullanılıyor
-    // Bu fonksiyon kullanılmıyor ama geriye dönük uyumluluk için bırakıldı
   }
 
   Future<String> _uploadWebImage(html.File file, String productId) async {

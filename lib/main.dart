@@ -5,8 +5,8 @@ import 'web_admin_main.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Firebase'i başlat  E3
   
-  // Firebase'i başlat
   try {
     debugPrint('🔥 Firebase başlatılıyor...');
     await Firebase.initializeApp(

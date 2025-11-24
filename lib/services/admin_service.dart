@@ -720,6 +720,64 @@ class AdminService {
     });
   }
 
+  // Kullanıcı adı müsaitlik kontrolü (anlık validasyon için)
+  Future<bool> isUsernameAvailable(String username, {String? excludeUserId}) async {
+    try {
+      if (username.trim().isEmpty) {
+        return false;
+      }
+      
+      final existingUsers = await _firestore
+          .collection('admin_users')
+          .where('username', isEqualTo: username.trim())
+          .limit(1)
+          .get();
+      
+      if (existingUsers.docs.isEmpty) {
+        return true;
+      }
+      
+      // Eğer excludeUserId verilmişse ve o ID'ye aitse, müsait say
+      if (excludeUserId != null && existingUsers.docs.first.id == excludeUserId) {
+        return true;
+      }
+      
+      return false;
+    } catch (e) {
+      // Hata durumunda false döndür (güvenli taraf)
+      return false;
+    }
+  }
+
+  // E-posta müsaitlik kontrolü (anlık validasyon için)
+  Future<bool> isEmailAvailable(String email, {String? excludeUserId}) async {
+    try {
+      if (email.trim().isEmpty) {
+        return false;
+      }
+      
+      final existingEmails = await _firestore
+          .collection('admin_users')
+          .where('email', isEqualTo: email.trim())
+          .limit(1)
+          .get();
+      
+      if (existingEmails.docs.isEmpty) {
+        return true;
+      }
+      
+      // Eğer excludeUserId verilmişse ve o ID'ye aitse, müsait say
+      if (excludeUserId != null && existingEmails.docs.first.id == excludeUserId) {
+        return true;
+      }
+      
+      return false;
+    } catch (e) {
+      // Hata durumunda false döndür (güvenli taraf)
+      return false;
+    }
+  }
+
   Future<void> addUser(AdminUser user) async {
     try {
       // Kullanıcı adı ve email kontrolü
