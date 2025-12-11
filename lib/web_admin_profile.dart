@@ -349,15 +349,6 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
       return;
     }
 
-    if (_newPasswordController.text.length < 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Yeni şifre en az 6 karakter olmalıdır'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
 
     if (_currentUser == null) return;
 
@@ -1015,9 +1006,6 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
                 border: const OutlineInputBorder(),
               ),
               validator: (value) {
-                if (value != null && value.isNotEmpty && value.length < 6) {
-                  return 'Şifre en az 6 karakter olmalı';
-                }
                 return null;
               },
             ),

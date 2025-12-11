@@ -203,6 +203,49 @@ exports.sendNotificationToMultiple = functions.https.onCall(async (data, _contex
 });
 
 /**
+ * Storage'a yüklenen ürün resimlerini otomatik olarak public yap
+ * Her resim yüklendiğinde bu trigger çalışır
+ */
+exports.makeProductImagesPublic = functions.storage.object().onFinalize(async (object) => {
+  try {
+    const filePath = object.name;
+    
+    // Sadece product_images klasöründeki dosyalar için çalış
+    if (!filePath || !filePath.startsWith('product_images/')) {
+      console.log('⏭️ Bu dosya product_images klasöründe değil, atlanıyor:', filePath);
+      return null;
+    }
+    
+    console.log('📸 Ürün resmi yüklendi, public yapılıyor:', filePath);
+    
+    const bucket = admin.storage().bucket();
+    const file = bucket.file(filePath);
+    
+    // Dosyayı public yap
+    await file.makePublic();
+    console.log('✅ Dosya public yapıldı:', filePath);
+    
+    // Metadata'yı güncelle
+    await file.setMetadata({
+      metadata: {
+        ...object.metadata,
+        public: 'true',
+        madePublicAt: new Date().toISOString(),
+      },
+      cacheControl: 'public, max-age=31536000', // 1 yıl cache
+    });
+    
+    console.log('✅ Metadata güncellendi:', filePath);
+    
+    return null;
+  } catch (error) {
+    console.error('❌ Resmi public yapma hatası:', error);
+    // Hata olsa bile devam et (kritik değil)
+    return null;
+  }
+});
+
+/**
  * Ürün ekleme ve resim yükleme için Cloud Function
  * Kullanım: Callable function olarak çağrılır
  */
@@ -232,20 +275,20 @@ exports.uploadProduct = functions.https.onCall(async (data, _context) => {
         await file.save(buffer, {
           metadata: { 
             contentType: 'image/jpeg',
+            cacheControl: 'public, max-age=31536000', // 1 yıl cache
             metadata: {
               uploadedBy: _context.auth?.uid || 'admin',
-              uploadedAt: new Date().toISOString()
+              uploadedAt: new Date().toISOString(),
+              public: 'true'
             }
           }
         });
         
-        // Download URL al (10 yıl geçerli)
-        const [url] = await file.getSignedUrl({ 
-          action: 'read', 
-          expires: '03-09-2491' 
-        });
+        // Dosyayı public yap
+        await file.makePublic();
         
-        imageUrl = url;
+        // Public URL al (signed URL yerine public URL kullan)
+        imageUrl = `https://storage.googleapis.com/${bucket.name}/${file.name}`;
       } catch (storageError) {
         console.error('Storage yükleme hatası:', storageError);
         // Resim yükleme hatası olsa bile ürünü ekle

@@ -29,149 +29,295 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
       backgroundColor: const Color(0xFFF8FAFC),
       body: Column(
         children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
+          // Header - Responsive
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isMobile = constraints.maxWidth < 600;
+              return Container(
+                padding: EdgeInsets.all(isMobile ? 16 : 24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Column(
-              children: [
-                Row(
+                child: Column(
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                    isMobile
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Admin Kullanıcı Yönetimi',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1E293B),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Sistem yöneticilerini ve yetkilerini yönetin',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 13,
+                                ),
+                              ),
+                              if (PermissionService.canCreateUsers()) ...[
+                                const SizedBox(height: 16),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    onPressed: () => _showAddUserDialog(),
+                                    icon: const Icon(Icons.person_add),
+                                    label: const Text('Yeni Kullanıcı'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF6366F1),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 24,
+                                        vertical: 12,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Admin Kullanıcı Yönetimi',
+                                      style: TextStyle(
+                                        fontSize: 28,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF1E293B),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Sistem yöneticilerini ve yetkilerini yönetin',
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (PermissionService.canCreateUsers())
+                                ElevatedButton.icon(
+                                  onPressed: () => _showAddUserDialog(),
+                                  icon: const Icon(Icons.person_add),
+                                  label: const Text('Yeni Kullanıcı'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF6366F1),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 24,
+                                      vertical: 12,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                    const SizedBox(height: 24),
+                    // Filters - Responsive layout
+                    LayoutBuilder(
+                      builder: (context, filterConstraints) {
+                        final isMobile = filterConstraints.maxWidth < 600;
+                    
+                    if (isMobile) {
+                      // Mobil için dikey layout
+                      return Column(
                         children: [
-                          const Text(
-                            'Admin Kullanıcı Yönetimi',
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1E293B),
+                          TextField(
+                            controller: _searchController,
+                            decoration: InputDecoration(
+                              hintText: 'Kullanıcı ara...',
+                              prefixIcon: const Icon(Icons.search),
+                              suffixIcon: _searchController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear),
+                                      onPressed: () {
+                                        setState(() {
+                                          _searchController.clear();
+                                        });
+                                      },
+                                    )
+                                  : null,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              filled: true,
+                              fillColor: Colors.grey[50],
+                            ),
+                            onChanged: (value) => setState(() {}),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.grey[300]!),
+                                  ),
+                                  child: DropdownButton<String>(
+                                    value: _selectedRole,
+                                    underline: const SizedBox(),
+                                    isExpanded: true,
+                                    items: const [
+                                      DropdownMenuItem(value: 'Tümü', child: Text('Tüm Roller')),
+                                      DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                                      DropdownMenuItem(value: 'moderator', child: Text('Moderatör')),
+                                      DropdownMenuItem(value: 'user', child: Text('Kullanıcı')),
+                                    ],
+                                    onChanged: (value) {
+                                      setState(() {
+                                        _selectedRole = value!;
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[50],
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.grey[300]!),
+                                  ),
+                                  child: DropdownButton<String>(
+                                    value: _selectedStatus,
+                                    underline: const SizedBox(),
+                                    isExpanded: true,
+                                    items: const [
+                                      DropdownMenuItem(value: 'Tümü', child: Text('Tüm Durumlar')),
+                                      DropdownMenuItem(value: 'Aktif', child: Text('Aktif')),
+                                      DropdownMenuItem(value: 'Pasif', child: Text('Pasif')),
+                                    ],
+                                    onChanged: (value) {
+                                      setState(() {
+                                        _selectedStatus = value!;
+                                      });
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      );
+                    } else {
+                      // Desktop için yatay layout
+                      return Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _searchController,
+                              decoration: InputDecoration(
+                                hintText: 'Kullanıcı adı, email veya ad soyad ile ara...',
+                                prefixIcon: const Icon(Icons.search),
+                                suffixIcon: _searchController.text.isNotEmpty
+                                    ? IconButton(
+                                        icon: const Icon(Icons.clear),
+                                        onPressed: () {
+                                          setState(() {
+                                            _searchController.clear();
+                                          });
+                                        },
+                                      )
+                                    : null,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                filled: true,
+                                fillColor: Colors.grey[50],
+                              ),
+                              onChanged: (value) => setState(() {}),
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Sistem yöneticilerini ve yetkilerini yönetin',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 14,
+                          const SizedBox(width: 16),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[50],
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey[300]!),
+                            ),
+                            child: DropdownButton<String>(
+                              value: _selectedRole,
+                              underline: const SizedBox(),
+                              items: const [
+                                DropdownMenuItem(value: 'Tümü', child: Text('Tüm Roller')),
+                                DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                                DropdownMenuItem(value: 'moderator', child: Text('Moderatör')),
+                                DropdownMenuItem(value: 'user', child: Text('Kullanıcı')),
+                              ],
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedRole = value!;
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[50],
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey[300]!),
+                            ),
+                            child: DropdownButton<String>(
+                              value: _selectedStatus,
+                              underline: const SizedBox(),
+                              items: const [
+                                DropdownMenuItem(value: 'Tümü', child: Text('Tüm Durumlar')),
+                                DropdownMenuItem(value: 'Aktif', child: Text('Aktif')),
+                                DropdownMenuItem(value: 'Pasif', child: Text('Pasif')),
+                              ],
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedStatus = value!;
+                                });
+                              },
                             ),
                           ),
                         ],
-                      ),
-                    ),
-                    if (PermissionService.canCreateUsers())
-                      ElevatedButton.icon(
-                        onPressed: () => _showAddUserDialog(),
-                        icon: const Icon(Icons.person_add),
-                        label: const Text('Yeni Kullanıcı'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF6366F1),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 12,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                // Filters
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: InputDecoration(
-                          hintText: 'Kullanıcı adı, email veya ad soyad ile ara...',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: _searchController.text.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear),
-                                  onPressed: () {
-                                    setState(() {
-                                      _searchController.clear();
-                                    });
-                                  },
-                                )
-                              : null,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          filled: true,
-                          fillColor: Colors.grey[50],
-                        ),
-                        onChanged: (value) => setState(() {}),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: DropdownButton<String>(
-                        value: _selectedRole,
-                        underline: const SizedBox(),
-                        items: const [
-                          DropdownMenuItem(value: 'Tümü', child: Text('Tüm Roller')),
-                          DropdownMenuItem(value: 'admin', child: Text('Admin')),
-                          DropdownMenuItem(value: 'moderator', child: Text('Moderatör')),
-                          DropdownMenuItem(value: 'user', child: Text('Kullanıcı')),
-                        ],
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedRole = value!;
-                          });
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: DropdownButton<String>(
-                        value: _selectedStatus,
-                        underline: const SizedBox(),
-                        items: const [
-                          DropdownMenuItem(value: 'Tümü', child: Text('Tüm Durumlar')),
-                          DropdownMenuItem(value: 'Aktif', child: Text('Aktif')),
-                          DropdownMenuItem(value: 'Pasif', child: Text('Pasif')),
-                        ],
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedStatus = value!;
-                          });
-                        },
-                      ),
+                      );
+                    }
+                      },
                     ),
                   ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
 
-          // User List
+          // User List - Responsive padding
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: _buildUserList(),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isMobile = constraints.maxWidth < 600;
+                return Padding(
+                  padding: EdgeInsets.all(isMobile ? 12 : 24),
+                  child: _buildUserList(),
+                );
+              },
             ),
           ),
         ],
@@ -342,12 +488,39 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
           );
         }
 
+        // Responsive grid: mobil için 1-2, tablet için 3, desktop için 4-5 sütun
+        final screenWidth = MediaQuery.of(context).size.width;
+        int crossAxisCount;
+        double childAspectRatio;
+        
+        if (screenWidth < 600) {
+          // Mobil
+          crossAxisCount = 1;
+          childAspectRatio = 3.5;
+        } else if (screenWidth < 900) {
+          // Küçük tablet
+          crossAxisCount = 2;
+          childAspectRatio = 2.2;
+        } else if (screenWidth < 1200) {
+          // Tablet
+          crossAxisCount = 3;
+          childAspectRatio = 1.8;
+        } else if (screenWidth < 1600) {
+          // Küçük desktop
+          crossAxisCount = 4;
+          childAspectRatio = 1.5;
+        } else {
+          // Büyük desktop
+          crossAxisCount = 5;
+          childAspectRatio = 1.3;
+        }
+
         return GridView.builder(
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 5,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
-            childAspectRatio: 1.1,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            childAspectRatio: childAspectRatio,
           ),
           itemCount: users.length,
           itemBuilder: (context, index) {
@@ -374,9 +547,9 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
       ),
       child: InkWell(
         onTap: () => _showUserDetails(user),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -384,7 +557,7 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
               Row(
                 children: [
                   CircleAvatar(
-                    radius: 14,
+                    radius: 24,
                     backgroundColor: roleColor.withValues(alpha: 0.2),
                     child: Text(
                       user.fullName.isNotEmpty
@@ -393,13 +566,13 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                       style: TextStyle(
                         color: roleColor,
                         fontWeight: FontWeight.bold,
-                        fontSize: 12,
+                        fontSize: 20,
                       ),
                     ),
                   ),
                   const Spacer(),
                   PopupMenuButton<String>(
-                    icon: Icon(Icons.more_vert, color: Colors.grey[600], size: 14),
+                    icon: Icon(Icons.more_vert, color: Colors.grey[600], size: 20),
                     onSelected: (value) => _handleMenuAction(value, user),
                     itemBuilder: (context) => [
                       if (PermissionService.canUpdateUsers())
@@ -443,45 +616,45 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 12),
               Text(
                 user.fullName,
                 style: const TextStyle(
-                  fontSize: 12,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF1E293B),
                 ),
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 4),
               Text(
                 user.email,
                 style: TextStyle(
-                  fontSize: 9,
+                  fontSize: 13,
                   color: Colors.grey[600],
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 12),
               Wrap(
-                spacing: 3,
-                runSpacing: 3,
+                spacing: 6,
+                runSpacing: 6,
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 5,
-                      vertical: 2,
+                      horizontal: 10,
+                      vertical: 6,
                     ),
                     decoration: BoxDecoration(
                       color: roleColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       _getRoleDisplayName(user.role),
                       style: TextStyle(
-                        fontSize: 8,
+                        fontSize: 12,
                         color: roleColor,
                         fontWeight: FontWeight.w600,
                       ),
@@ -491,20 +664,20 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 5,
-                      vertical: 2,
+                      horizontal: 10,
+                      vertical: 6,
                     ),
                     decoration: BoxDecoration(
                       color: user.isActive
                           ? Colors.green.withValues(alpha: 0.1)
                           : Colors.grey.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(4),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       user.isActive ? 'Aktif' : 'Pasif',
                       style: TextStyle(
-                        fontSize: 8,
-                        color: user.isActive ? Colors.green : Colors.grey,
+                        fontSize: 12,
+                        color: user.isActive ? Colors.green[700] : Colors.grey[700],
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -1167,11 +1340,6 @@ class _UserDialogState extends State<_UserDialog> {
                       if (value == null || value.isEmpty) {
                         return 'Şifre gerekli';
                       }
-                      if (value.length < 6) {
-                        return 'Şifre en az 6 karakter olmalı';
-                      }
-                    } else if (value != null && value.isNotEmpty && value.length < 6) {
-                      return 'Şifre en az 6 karakter olmalı';
                     }
                     return null;
                   },

@@ -4,13 +4,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:html' as html;
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image/image.dart' as img;
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
+// Firebase Storage kaldırıldı - sadece Base64 kullanılıyor
 
 class ProfessionalImageUploader extends StatefulWidget {
   final String? initialImageUrl;
@@ -46,7 +44,8 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
   double _uploadProgress = 0.0;
   String? _errorMessage;
   bool _isDragging = false;
-  StreamSubscription<TaskSnapshot>? _uploadProgressSubscription;
+  // Firebase Storage kaldırıldı - artık kullanılmıyor
+  // StreamSubscription<TaskSnapshot>? _uploadProgressSubscription;
   String? _currentUploadedUrl; // Yüklenen URL'i sakla
 
   String? get uploadedImageUrl => _currentUploadedUrl;
@@ -60,21 +59,33 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
 
   // Dışarıdan çağrılabilir: fotoğraf yüklenmemişse yükle
   Future<String?> ensureImageUploaded() async {
+    debugPrint('🔍 ensureImageUploaded çağrıldı');
+    
     if (!_hasImage()) {
+      debugPrint('⚠️ Resim bulunamadı');
       return null;
     }
     
     // Zaten yüklenmişse URL'i döndür
     if (_currentUploadedUrl != null && _currentUploadedUrl!.isNotEmpty) {
+      debugPrint('✅ Resim zaten yüklenmiş: ${_currentUploadedUrl!.substring(0, _currentUploadedUrl!.length > 50 ? 50 : _currentUploadedUrl!.length)}...');
       return _currentUploadedUrl;
     }
     
     // Yüklenmemişse yükle
     if (hasUnuploadedImage) {
-      await _uploadImage();
-      return _currentUploadedUrl;
+      debugPrint('📤 Resim yükleniyor...');
+      try {
+        await _uploadImage();
+        debugPrint('✅ Resim yükleme tamamlandı: ${_currentUploadedUrl != null ? (_currentUploadedUrl!.length > 50 ? _currentUploadedUrl!.substring(0, 50) + '...' : _currentUploadedUrl) : 'NULL'}');
+        return _currentUploadedUrl;
+      } catch (e) {
+        debugPrint('❌ ensureImageUploaded hatası: $e');
+        rethrow;
+      }
     }
     
+    debugPrint('⚠️ Yüklenecek resim yok');
     return null;
   }
 
@@ -357,19 +368,22 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: _uploadImage,
-              icon: const Icon(Icons.cloud_upload, size: 18),
-              label: const Text('Yükle'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green[700],
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
+          // Manuel yükleme butonu (autoUpload false ise)
+          if (!widget.autoUpload && hasUnuploadedImage) ...[
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _uploadImage,
+                icon: const Icon(Icons.cloud_upload, size: 18),
+                label: const Text('Yükle'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green[700],
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
               ),
             ),
-          ),
+          ],
         ],
       ],
     );
@@ -472,9 +486,11 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
   }
 
   void _handleWebFile(html.File file) {
-    // Validate file size (max 3MB - retry limit hatası için küçültüldü)
-    if (file.size > 3 * 1024 * 1024) {
-      _showError('Dosya boyutu çok büyük. Maksimum 3MB olmalıdır. Lütfen resmi küçültün.');
+    debugPrint('📁 Web dosyası seçildi: ${file.name}, Boyut: ${file.size} bytes, Tip: ${file.type}');
+    
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      _showError('Dosya boyutu çok büyük. Maksimum 5MB olmalıdır. Lütfen resmi küçültün.');
       return;
     }
 
@@ -491,15 +507,23 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
       _currentUploadedUrl = null; // Yeni resim seçildi, URL'i temizle
     });
     
+    debugPrint('✅ Dosya state\'e eklendi. autoUpload: ${widget.autoUpload}');
+    
     // Otomatik yükleme açıksa
     if (widget.autoUpload) {
+      debugPrint('📤 Otomatik yükleme aktif, 500ms sonra yükleme başlatılacak...');
       Future.delayed(const Duration(milliseconds: 500), () {
+        debugPrint('📤 Otomatik yükleme başlatılıyor...');
         _uploadImage();
       });
+    } else {
+      debugPrint('ℹ️ Otomatik yükleme kapalı, manuel yükleme bekleniyor');
     }
   }
 
   void _handleMobileFile(File file) {
+    debugPrint('📁 Mobile dosyası seçildi: ${file.path}');
+    
     setState(() {
       _selectedMobileFile = file;
       _selectedWebFile = null;
@@ -507,11 +531,17 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
       _currentUploadedUrl = null; // Yeni resim seçildi, URL'i temizle
     });
     
+    debugPrint('✅ Dosya state\'e eklendi. autoUpload: ${widget.autoUpload}');
+    
     // Otomatik yükleme açıksa
     if (widget.autoUpload) {
+      debugPrint('📤 Otomatik yükleme aktif, 500ms sonra yükleme başlatılacak...');
       Future.delayed(const Duration(milliseconds: 500), () {
+        debugPrint('📤 Otomatik yükleme başlatılıyor...');
         _uploadImage();
       });
+    } else {
+      debugPrint('ℹ️ Otomatik yükleme kapalı, manuel yükleme bekleniyor');
     }
   }
 
@@ -660,126 +690,50 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
     }
 
     try {
-      String imageUrl;
-      final productId = widget.productId;
-      debugPrint('Product ID: $productId');
+      // Base64 yöntemi kullanılıyor (Firebase Storage olmadan)
+      debugPrint('📤 Resim yükleme başlatılıyor (Base64 yöntemi)...');
 
-      if (kIsWeb) {
-        if (_croppedImageBytes != null) {
-          debugPrint('Web: Kırpılmış resim yükleniyor (${_croppedImageBytes!.length} bytes)');
-          imageUrl = await _uploadWebCroppedImage(_croppedImageBytes!, productId);
-        } else if (_selectedWebFile != null) {
-          debugPrint('Web: Dosya yükleniyor (${_selectedWebFile!.name}, ${_selectedWebFile!.size} bytes)');
-          imageUrl = await _uploadWebFile(_selectedWebFile!, productId);
-        } else {
-          debugPrint('❌ Web: Yüklenecek resim bulunamadı');
-          throw Exception('Yüklenecek resim bulunamadı');
-        }
-      } else {
-        if (_croppedImageBytes != null) {
-          debugPrint('Mobile: Kırpılmış resim yükleniyor (${_croppedImageBytes!.length} bytes)');
-          // Save cropped bytes to temp file and upload
-          final tempFile = await _saveCroppedBytesToFile(_croppedImageBytes!);
-          imageUrl = await _uploadMobileFile(tempFile, productId);
-          await tempFile.delete();
-        } else if (_selectedMobileFile != null) {
-          debugPrint('Mobile: Dosya yükleniyor (${_selectedMobileFile!.path})');
-          imageUrl = await _uploadMobileFile(_selectedMobileFile!, productId);
-        } else {
-          debugPrint('❌ Mobile: Yüklenecek resim bulunamadı');
-          throw Exception('Yüklenecek resim bulunamadı');
-        }
+      // Progress güncellemesi
+      if (mounted) {
+        setState(() {
+          _uploadProgress = 0.2; // %20
+        });
+      }
+
+      String imageUrl;
+      
+      // Direkt Base64 kullan (Firebase Storage yok)
+      debugPrint('📤 Base64 yöntemi kullanılıyor (Firestore\'a direkt kayıt)...');
+      
+      if (mounted) {
+        setState(() {
+          _uploadProgress = 0.3; // Base64 için %30
+        });
       }
       
-      debugPrint('✅ Resim başarıyla yüklendi: $imageUrl');
+      imageUrl = await _uploadAsBase64(widget.productId);
+      if (imageUrl.isEmpty) {
+        throw Exception('Resim yüklenemedi (Base64 başarısız)');
+      }
+      debugPrint('✅ Resim başarıyla Base64 olarak Firestore\'a kaydedildi');
 
       setState(() {
         _isUploading = false;
         _uploadProgress = 1.0;
-      });
-
-      setState(() {
         _currentUploadedUrl = imageUrl;
       });
-      
+
       widget.onImageUploaded(imageUrl);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('✅ Resim başarıyla yüklendi'),
+            content: Text('✅ Resim başarıyla kaydedildi (Base64 - Firestore)'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 2),
           ),
         );
       }
-    } on FirebaseException catch (e, stackTrace) {
-      // Firebase Storage hatası - Base64 fallback'e geç
-      debugPrint('⚠️ Firebase Storage hatası, Base64 fallback deneniyor...');
-      
-      try {
-        final fallbackUrl = await _uploadAsBase64(widget.productId);
-        if (fallbackUrl.isNotEmpty) {
-          setState(() {
-            _isUploading = false;
-            _uploadProgress = 1.0;
-            _currentUploadedUrl = fallbackUrl;
-          });
-          
-          widget.onImageUploaded(fallbackUrl);
-          
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('✅ Resim Base64 olarak kaydedildi (Storage kullanılamadı)'),
-                backgroundColor: Colors.orange,
-                duration: Duration(seconds: 3),
-              ),
-            );
-          }
-          return; // Başarılı, hata gösterme
-        }
-      } catch (fallbackError) {
-        debugPrint('❌ Base64 fallback de başarısız: $fallbackError');
-      }
-      
-      // Fallback de başarısız oldu, orijinal hatayı göster
-      debugPrint('❌ FirebaseException: ${e.code}');
-      debugPrint('   Message: ${e.message}');
-      debugPrint('   StackTrace: $stackTrace');
-      
-      setState(() {
-        _isUploading = false;
-        _uploadProgress = 0.0;
-      });
-      
-      String errorMessage;
-      switch (e.code) {
-        case 'storage/retry-limit-exceeded':
-          errorMessage = 'Yükleme çok uzun sürdü. Lütfen daha küçük bir resim seçin (max 3MB) veya internet bağlantınızı kontrol edin.';
-          break;
-        case 'storage/unauthorized':
-          errorMessage = 'Yükleme izni yok. Lütfen Firebase Storage kurallarını kontrol edin.';
-          break;
-        case 'storage/canceled':
-          errorMessage = 'Yükleme iptal edildi.';
-          break;
-        case 'storage/unknown':
-          errorMessage = 'Firebase Storage hatası. Lütfen Firebase Console\'dan Storage\'ın aktif olduğunu kontrol edin.';
-          break;
-        case 'storage/object-not-found':
-          errorMessage = 'Storage bucket bulunamadı. Firebase Console\'dan Storage bucket oluşturun.';
-          break;
-        case 'storage/quota-exceeded':
-          errorMessage = 'Firebase Storage kotası dolmuş. Lütfen Firebase Console\'dan kontrol edin.';
-          break;
-        default:
-          errorMessage = 'Firebase Storage hatası: ${e.code}\n${e.message ?? ""}\n\nLütfen Firebase Console\'dan Storage ayarlarını kontrol edin.';
-      }
-      
-      debugPrint('Hata mesajı: $errorMessage');
-      _showError(errorMessage);
-      widget.onError?.call(errorMessage);
     } catch (e, stackTrace) {
       debugPrint('❌ Genel hata: $e');
       debugPrint('Hata tipi: ${e.runtimeType}');
@@ -790,48 +744,7 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
         _uploadProgress = 0.0;
       });
       
-      String errorMessage = 'Yükleme hatası: ';
-      
-      if (e.toString().contains('retry-limit-exceeded') || 
-          e.toString().contains('timeout') ||
-          e.toString().contains('zaman aşımı')) {
-        errorMessage = 'Yükleme çok uzun sürdü. Lütfen daha küçük bir resim seçin (max 3MB) veya internet bağlantınızı kontrol edin.';
-      } else if (e.toString().contains('unauthorized') || 
-                 e.toString().contains('permission')) {
-        errorMessage = 'Yükleme izni yok. Firebase Storage kurallarını kontrol edin.';
-      } else if (e.toString().contains('bucket') || 
-                 e.toString().contains('not found')) {
-        // Storage bucket yok - Base64 fallback dene
-        debugPrint('⚠️ Storage bucket bulunamadı, Base64 fallback deneniyor...');
-        try {
-          final fallbackUrl = await _uploadAsBase64(widget.productId);
-          if (fallbackUrl.isNotEmpty) {
-            setState(() {
-              _isUploading = false;
-              _uploadProgress = 1.0;
-              _currentUploadedUrl = fallbackUrl;
-            });
-            
-            widget.onImageUploaded(fallbackUrl);
-            
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('✅ Resim Base64 olarak kaydedildi (Storage kullanılamadı)'),
-                  backgroundColor: Colors.orange,
-                  duration: Duration(seconds: 3),
-                ),
-              );
-            }
-            return; // Başarılı
-          }
-        } catch (fallbackError) {
-          debugPrint('❌ Base64 fallback başarısız: $fallbackError');
-        }
-        errorMessage = 'Firebase Storage bucket bulunamadı. Resim Base64 olarak kaydedilemedi.';
-      } else {
-        errorMessage = 'Yükleme hatası: ${e.toString()}\n\nLütfen Firebase Console\'dan Storage ayarlarını kontrol edin.';
-      }
+      String errorMessage = 'Yükleme hatası: ${e.toString()}';
       
       debugPrint('Hata mesajı: $errorMessage');
       _showError(errorMessage);
@@ -839,10 +752,18 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
     }
   }
 
-  // Base64 fallback - Resmi küçültüp Firestore'a kaydet
+  // Base64 yöntemi - Firebase Storage yoksa fallback olarak kullanılır
+  // Basitleştirilmiş ve hızlandırılmış versiyon
   Future<String> _uploadAsBase64(String productId) async {
     try {
-      debugPrint('📤 Base64 fallback başlatılıyor...');
+      debugPrint('📤 Base64 yükleme başlatılıyor (hızlı mod)...');
+      
+      // Progress: %30
+      if (mounted) {
+        setState(() {
+          _uploadProgress = 0.3;
+        });
+      }
       
       Uint8List? imageBytes;
       
@@ -868,66 +789,143 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
         throw Exception('Resim verisi bulunamadı');
       }
       
-      // Resmi decode et ve optimize et
-      img.Image? decodedImage = img.decodeImage(imageBytes);
+      debugPrint('📦 Orijinal resim boyutu: ${imageBytes.length} bytes');
+      
+      // Progress: %40
+      if (mounted) {
+        setState(() {
+          _uploadProgress = 0.4;
+        });
+      }
+      
+      // Resmi decode et (timeout olmadan, direkt)
+      img.Image? decodedImage;
+      try {
+        decodedImage = img.decodeImage(imageBytes);
+      } catch (e) {
+        debugPrint('❌ Resim decode hatası: $e');
+        throw Exception('Resim işlenemedi. Lütfen farklı bir resim deneyin.');
+      }
+      
       if (decodedImage == null) {
         throw Exception('Resim decode edilemedi');
       }
       
-      // Resmi küçült (max 800x800, kaliteyi koru)
-      int maxSize = 800;
-      if (decodedImage.width > maxSize || decodedImage.height > maxSize) {
-        double ratio = decodedImage.width > decodedImage.height
-            ? maxSize / decodedImage.width
-            : maxSize / decodedImage.height;
-        
-        decodedImage = img.copyResize(
-          decodedImage,
-          width: (decodedImage.width * ratio).toInt(),
-          height: (decodedImage.height * ratio).toInt(),
-          interpolation: img.Interpolation.linear,
-        );
-        debugPrint('📐 Resim küçültüldü: ${decodedImage.width}x${decodedImage.height}');
+      final image = decodedImage;
+      debugPrint('📐 Orijinal boyutlar: ${image.width}x${image.height}');
+      
+      // Progress: %50
+      if (mounted) {
+        setState(() {
+          _uploadProgress = 0.5;
+        });
       }
       
-      // JPEG olarak encode et (kalite 85%)
-      final optimizedBytes = Uint8List.fromList(
-        img.encodeJpg(decodedImage, quality: 85)
-      );
+      // Resmi küçült (max 500x500 - daha küçük Base64 string için)
+      int maxSize = 500;
+      img.Image finalImage = image;
+      if (image.width > maxSize || image.height > maxSize) {
+        double ratio = image.width > image.height
+            ? maxSize / image.width
+            : maxSize / image.height;
+        
+        final targetWidth = (image.width * ratio).toInt();
+        final targetHeight = (image.height * ratio).toInt();
+        
+        try {
+          finalImage = img.copyResize(
+            image,
+            width: targetWidth,
+            height: targetHeight,
+            interpolation: img.Interpolation.linear,
+          );
+          debugPrint('📐 Resim küçültüldü: ${finalImage.width}x${finalImage.height}');
+        } catch (e) {
+          debugPrint('⚠️ Resize hatası, orijinal boyut kullanılıyor: $e');
+          finalImage = image;
+        }
+      }
+      
+      // Progress: %70
+      if (mounted) {
+        setState(() {
+          _uploadProgress = 0.7;
+        });
+      }
+      
+      // JPEG olarak encode et (kalite 70% - daha küçük dosya)
+      Uint8List optimizedBytes;
+      try {
+        optimizedBytes = Uint8List.fromList(img.encodeJpg(finalImage, quality: 70));
+      } catch (e) {
+        debugPrint('❌ JPEG encode hatası: $e');
+        throw Exception('Resim optimize edilemedi');
+      }
       
       debugPrint('📦 Optimize edilmiş boyut: ${optimizedBytes.length} bytes');
       
-      // Base64 string'e çevir
+      // Progress: %85
+      if (mounted) {
+        setState(() {
+          _uploadProgress = 0.85;
+        });
+      }
+      
+      // Base64 string'e çevir (direkt, timeout yok)
       final base64String = base64Encode(optimizedBytes);
       final dataUrl = 'data:image/jpeg;base64,$base64String';
       
-      // Firestore'a kaydet (opsiyonel - sadece metadata için)
-      try {
-        final timestamp = DateTime.now().millisecondsSinceEpoch;
-        await FirebaseFirestore.instance
-            .collection('product_images')
-            .doc('${productId}_$timestamp')
-            .set({
-          'productId': productId,
-          'base64Data': base64String,
-          'createdAt': FieldValue.serverTimestamp(),
-          'size': optimizedBytes.length,
+      debugPrint('📝 Base64 string uzunluğu: ${base64String.length} karakter');
+      debugPrint('📝 Data URL uzunluğu: ${dataUrl.length} karakter');
+      
+      // Firestore limit kontrolü (1MB = 1,048,576 bytes)
+      if (dataUrl.length > 1000000) {
+        debugPrint('⚠️ Base64 string çok büyük (${dataUrl.length} karakter), daha fazla küçültülüyor...');
+        
+        // Daha küçük boyut ve daha düşük kalite ile tekrar dene
+        final smallerImage = img.copyResize(finalImage, width: 400, height: 400);
+        final smallerBytes = Uint8List.fromList(img.encodeJpg(smallerImage, quality: 60));
+        final smallerBase64 = base64Encode(smallerBytes);
+        final smallerDataUrl = 'data:image/jpeg;base64,$smallerBase64';
+        
+        debugPrint('📝 Küçültülmüş Base64 string uzunluğu: ${smallerBase64.length} karakter');
+        
+        if (smallerDataUrl.length > 1000000) {
+          throw Exception('Resim çok büyük. Lütfen daha küçük bir resim seçin.');
+        }
+        
+        // Progress: %100
+        if (mounted) {
+          setState(() {
+            _uploadProgress = 1.0;
+          });
+        }
+        
+        debugPrint('✅ Base64 URL oluşturuldu (küçültülmüş, ${smallerDataUrl.length} karakter)');
+        return smallerDataUrl;
+      }
+      
+      // Progress: %100
+      if (mounted) {
+        setState(() {
+          _uploadProgress = 1.0;
         });
-        debugPrint('✅ Base64 veri Firestore\'a kaydedildi');
-      } catch (e) {
-        debugPrint('⚠️ Firestore kayıt hatası (devam ediliyor): $e');
       }
       
       debugPrint('✅ Base64 URL oluşturuldu (${dataUrl.length} karakter)');
       return dataUrl;
       
     } catch (e, stackTrace) {
-      debugPrint('❌ Base64 fallback hatası: $e');
+      debugPrint('❌ Base64 yükleme hatası: $e');
       debugPrint('Stack trace: $stackTrace');
       rethrow;
     }
   }
 
+  // Firebase Storage kaldırıldı - artık kullanılmıyor
+  // Aşağıdaki metodlar artık kullanılmıyor (Firebase Storage bağımlılığı nedeniyle)
+  // ignore: unused_element
+  /* Kaldırıldı - Firebase Storage artık kullanılmıyor
   Future<String> _uploadWebCroppedImage(
       Uint8List imageBytes, String productId) async {
     debugPrint('📤 Web kırpılmış resim yükleme başlatılıyor...');
@@ -951,7 +949,13 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
     debugPrint('Upload task başlatılıyor...');
     final uploadTask = ref.putBlob(
       blob,
-      SettableMetadata(contentType: 'image/jpeg'),
+      SettableMetadata(
+        contentType: 'image/jpeg',
+        cacheControl: 'public, max-age=31536000', // 1 yıl cache
+        customMetadata: {
+          'public': 'true', // Public erişim için işaret
+        },
+      ),
     );
     debugPrint('Upload task oluşturuldu');
 
@@ -969,35 +973,68 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
       (snapshot) {
         if (!mounted) return;
         
-        if (snapshot.totalBytes > 0) {
-          final progress = snapshot.bytesTransferred / snapshot.totalBytes;
-          final clampedProgress = progress.clamp(0.05, 0.95);
-          setState(() {
-            _uploadProgress = clampedProgress;
-          });
-        } else if (snapshot.bytesTransferred > 0) {
-          if (mounted) {
-            setState(() {
-              _uploadProgress = 0.1;
-            });
-          }
-        }
+        debugPrint('📊 Upload snapshot: state=${snapshot.state}, bytesTransferred=${snapshot.bytesTransferred}, totalBytes=${snapshot.totalBytes}');
         
+        // State kontrolü öncelikli
         if (snapshot.state == TaskState.success) {
+          debugPrint('✅ Upload başarıyla tamamlandı');
           if (mounted) {
             setState(() {
               _uploadProgress = 1.0;
             });
           }
+          return;
         } else if (snapshot.state == TaskState.error) {
+          debugPrint('❌ Upload hatası: ${snapshot.state}');
           if (mounted) {
             setState(() {
               _uploadProgress = 0.0;
+              _isUploading = false;
+            });
+            _showError('Yükleme hatası: Upload başarısız oldu');
+          }
+          return;
+        } else if (snapshot.state == TaskState.canceled) {
+          debugPrint('⚠️ Upload iptal edildi');
+          if (mounted) {
+            setState(() {
+              _uploadProgress = 0.0;
+              _isUploading = false;
+            });
+          }
+          return;
+        }
+        
+        // Progress hesaplama - totalBytes kontrolü
+        if (snapshot.totalBytes > 0) {
+          final progress = snapshot.bytesTransferred / snapshot.totalBytes;
+          // Gerçek progress'i göster, minimum %5, maksimum %95
+          final clampedProgress = progress.clamp(0.05, 0.95);
+          debugPrint('📈 Progress: ${(clampedProgress * 100).toStringAsFixed(1)}% (${snapshot.bytesTransferred}/${snapshot.totalBytes} bytes)');
+          if (mounted) {
+            setState(() {
+              _uploadProgress = clampedProgress;
+            });
+          }
+        } else if (snapshot.state == TaskState.running) {
+          // Upload başladı ama totalBytes henüz bilinmiyor
+          // Yavaş yavaş artır ama gerçek progress gelene kadar çok yüksek çıkarma
+          if (mounted && _uploadProgress < 0.2) {
+            setState(() {
+              _uploadProgress = (_uploadProgress + 0.02).clamp(0.05, 0.2);
+            });
+          }
+        } else if (snapshot.bytesTransferred > 0) {
+          // Bytes transfer ediliyor ama totalBytes bilinmiyor
+          if (mounted && _uploadProgress < 0.15) {
+            setState(() {
+              _uploadProgress = 0.1;
             });
           }
         }
       },
       onError: (error) {
+        debugPrint('❌ Progress listener hatası: $error');
         if (mounted) {
           setState(() {
             _uploadProgress = 0.0;
@@ -1012,7 +1049,7 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
     try {
       // Timeout ile beklemek (5 dakika)
       final snapshot = await uploadTask.timeout(
-        const Duration(minutes: 5),
+        const Duration(minutes: 10),
         onTimeout: () {
           uploadTask.cancel();
           throw Exception('Yükleme zaman aşımına uğradı. Lütfen tekrar deneyin.');
@@ -1056,76 +1093,158 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
       rethrow;
     }
   }
+  */ // Yorum bloğu kapatıldı
 
+  // Kullanılmıyor - Firebase Storage yerine Base64 kullanılıyor
+  // ignore: unused_element
+  /* Kaldırıldı - Firebase Storage artık kullanılmıyor
   Future<String> _uploadWebFile(html.File file, String productId) async {
     try {
       debugPrint('📤 Web dosya yükleme başlatılıyor...');
       debugPrint('Dosya adı: ${file.name}, Boyut: ${file.size} bytes, Tip: ${file.type}');
-      
+
+      // Firebase Storage instance kontrolü
       final storage = FirebaseStorage.instance;
       debugPrint('Storage bucket: ${storage.app.options.storageBucket}');
-      
+
+      // Firebase konfigürasyon kontrolü
+      if (storage.app.options.storageBucket == null || storage.app.options.storageBucket!.isEmpty) {
+        throw Exception('Firebase Storage bucket yapılandırılmamış. Firebase Console\'dan Storage ayarlarını kontrol edin.');
+      }
+
+      // Authentication kontrolü (Firebase Storage için gerekli olabilir)
+      debugPrint('🔐 Authentication kontrolü...');
+      final auth = FirebaseAuth.instance;
+      final currentUser = auth.currentUser;
+      debugPrint('Current user: ${currentUser?.uid ?? 'null'}');
+
+      if (currentUser == null) {
+        debugPrint('⚠️ Kullanıcı giriş yapmamış, anonim giriş deneniyor...');
+        try {
+          await auth.signInAnonymously();
+          debugPrint('✅ Anonim giriş başarılı');
+        } catch (e) {
+          debugPrint('❌ Anonim giriş başarısız: $e');
+          throw Exception('Firebase Authentication gerekli. Lütfen giriş yapın.');
+        }
+      } else {
+        debugPrint('✅ Kullanıcı giriş yapmış');
+      }
+
       final fileName =
           'product_images/$productId/${DateTime.now().millisecondsSinceEpoch}.jpg';
       debugPrint('Dosya yolu: $fileName');
-      
+
       final ref = storage.ref().child(fileName);
       debugPrint('Reference oluşturuldu: ${ref.fullPath}');
 
-      debugPrint('Blob oluşturuluyor...');
-      final blob = file.slice(0, file.size, file.type);
-      debugPrint('Blob oluşturuldu, boyut: ${file.size} bytes');
-      
-      debugPrint('Upload task başlatılıyor...');
-      final uploadTask = ref.putBlob(
-        blob,
-        SettableMetadata(contentType: 'image/jpeg'),
+      debugPrint('📂 HTML File\'dan Uint8List\'e çeviriliyor...');
+      final reader = html.FileReader();
+      reader.readAsArrayBuffer(file);
+      await reader.onLoad.first;
+      final Uint8List imageBytes = reader.result as Uint8List;
+      debugPrint('✅ Uint8List oluşturuldu, boyut: ${imageBytes.length} bytes');
+
+      debugPrint('📤 Upload task başlatılıyor...');
+      debugPrint('Upload parametreleri:');
+      debugPrint('  - ContentType: image/jpeg');
+      debugPrint('  - CacheControl: public, max-age=31536000');
+      debugPrint('  - CustomMetadata: {public: true}');
+      debugPrint('  - Data size: ${imageBytes.length} bytes');
+
+      final uploadTask = ref.putData(
+        imageBytes,
+        SettableMetadata(
+          contentType: 'image/jpeg',
+          cacheControl: 'public, max-age=31536000', // 1 yıl cache
+          customMetadata: {
+            'public': 'true', // Public erişim için işaret
+          },
+        ),
       );
-      debugPrint('Upload task oluşturuldu');
+      debugPrint('✅ Upload task oluşturuldu');
+      debugPrint('Task ID: ${uploadTask.hashCode}');
 
       // Track progress with proper subscription management
       _uploadProgressSubscription?.cancel();
-      
+
       // İlk progress'i hemen göster
       if (mounted) {
         setState(() {
           _uploadProgress = 0.05; // %5 başlangıç
         });
       }
-      
+
       _uploadProgressSubscription = uploadTask.snapshotEvents.listen(
         (snapshot) {
           if (!mounted) return;
-          
-          if (snapshot.totalBytes > 0) {
-            final progress = snapshot.bytesTransferred / snapshot.totalBytes;
-            final clampedProgress = progress.clamp(0.05, 0.95);
-            setState(() {
-              _uploadProgress = clampedProgress;
-            });
-          } else if (snapshot.bytesTransferred > 0) {
-            if (mounted) {
-              setState(() {
-                _uploadProgress = 0.1;
-              });
-            }
-          }
-          
+
+          debugPrint('📊 Upload snapshot: state=${snapshot.state}, bytesTransferred=${snapshot.bytesTransferred}, totalBytes=${snapshot.totalBytes}');
+
+          // State kontrolü öncelikli
           if (snapshot.state == TaskState.success) {
+            debugPrint('✅ Upload başarıyla tamamlandı');
             if (mounted) {
               setState(() {
                 _uploadProgress = 1.0;
               });
             }
+            return;
           } else if (snapshot.state == TaskState.error) {
+            debugPrint('❌ Upload hatası: ${snapshot.state}');
             if (mounted) {
               setState(() {
                 _uploadProgress = 0.0;
+                _isUploading = false;
+              });
+              _showError('Yükleme hatası: Upload başarısız oldu');
+            }
+            return;
+          } else if (snapshot.state == TaskState.canceled) {
+            debugPrint('⚠️ Upload iptal edildi');
+            if (mounted) {
+              setState(() {
+                _uploadProgress = 0.0;
+                _isUploading = false;
               });
             }
+            return;
+          }
+
+          // Progress hesaplama - totalBytes kontrolü
+          if (snapshot.totalBytes > 0 && snapshot.totalBytes > 0) {
+            final progress = snapshot.bytesTransferred / snapshot.totalBytes;
+            // Gerçek progress'i göster, minimum %5, maksimum %95
+            final clampedProgress = progress.clamp(0.05, 0.95);
+            debugPrint('📈 Progress: ${(clampedProgress * 100).toStringAsFixed(1)}% (${snapshot.bytesTransferred}/${snapshot.totalBytes} bytes)');
+            if (mounted) {
+              setState(() {
+                _uploadProgress = clampedProgress;
+              });
+            }
+          } else if (snapshot.state == TaskState.running) {
+            // Upload başladı ama totalBytes henüz bilinmiyor
+            // Yavaş yavaş artır ama gerçek progress gelene kadar çok yüksek çıkarma
+            if (mounted && _uploadProgress < 0.2) {
+              setState(() {
+                _uploadProgress = (_uploadProgress + 0.02).clamp(0.05, 0.2);
+              });
+            }
+            debugPrint('⏳ Upload çalışıyor, progress bekleniyor...');
+          } else if (snapshot.bytesTransferred > 0) {
+            // Bytes transfer ediliyor ama totalBytes bilinmiyor
+            if (mounted && _uploadProgress < 0.15) {
+              setState(() {
+                _uploadProgress = 0.1;
+              });
+            }
+            debugPrint('📤 Veri transferi başladı: ${snapshot.bytesTransferred} bytes');
+          } else if (snapshot.state == TaskState.running && snapshot.bytesTransferred == 0) {
+            debugPrint('⏳ Upload başladı ama henüz veri transfer edilmedi');
           }
         },
         onError: (error) {
+          debugPrint('❌ Progress listener hatası: $error');
           if (mounted) {
             setState(() {
               _uploadProgress = 0.0;
@@ -1137,17 +1256,74 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
         cancelOnError: false,
       );
 
+      // Upload task'ın başladığını kontrol et
+      debugPrint('⏳ Upload task durumu kontrol ediliyor...');
+
+      // Kısa bir süre bekle ve task durumunu kontrol et
+      await Future.delayed(const Duration(milliseconds: 500));
+      final initialSnapshot = uploadTask.snapshot;
+      debugPrint('📊 İlk snapshot durumu (500ms sonra): state=${initialSnapshot.state}, bytesTransferred=${initialSnapshot.bytesTransferred}, totalBytes=${initialSnapshot.totalBytes}');
+
+      if (initialSnapshot.state == TaskState.error) {
+        debugPrint('❌ Upload başlatılamadı - Error state');
+        throw Exception('Upload başlatılamadı. Firebase Storage ayarlarını kontrol edin.');
+      }
+
+      // Eğer hala paused durumda ise, devam ettir
+      if (initialSnapshot.state == TaskState.paused) {
+        debugPrint('⏸️ Upload paused durumda, devam ettiriliyor...');
+        uploadTask.resume();
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+
+      // Tekrar kontrol et
+      final secondSnapshot = uploadTask.snapshot;
+      debugPrint('📊 İkinci snapshot durumu: state=${secondSnapshot.state}, bytesTransferred=${secondSnapshot.bytesTransferred}, totalBytes=${secondSnapshot.totalBytes}');
+
+      // Eğer hala running durumda ama hiç byte transfer edilmediyse, uyarı ver
+      if (secondSnapshot.state == TaskState.running && secondSnapshot.bytesTransferred == 0) {
+        debugPrint('⚠️ Upload başladı ama henüz veri transfer edilmedi.');
+        debugPrint('   - Dosya boyutu: ${imageBytes.length} bytes');
+        debugPrint('   - Firebase Storage bucket: ${storage.app.options.storageBucket}');
+        debugPrint('   - Ağ bağlantısını kontrol edin');
+
+        // 5 saniye daha bekle ve tekrar kontrol et
+        await Future.delayed(const Duration(seconds: 5));
+        final thirdSnapshot = uploadTask.snapshot;
+        debugPrint('📊 Üçüncü kontrol (5sn sonra): state=${thirdSnapshot.state}, bytesTransferred=${thirdSnapshot.bytesTransferred}');
+
+        if (thirdSnapshot.state == TaskState.running && thirdSnapshot.bytesTransferred == 0) {
+          debugPrint('🚨 KRİTİK: Upload hala başlamadı! Muhtemel sorunlar:');
+          debugPrint('   - Ağ bağlantısı yok veya çok yavaş');
+          debugPrint('   - Firebase Storage izinleri');
+          debugPrint('   - Dosya boyutu çok büyük');
+          debugPrint('   - Firebase Storage kota limiti');
+        }
+      }
+      
+      if (initialSnapshot.state == TaskState.error) {
+        throw Exception('Upload başlatılamadı. Lütfen Firebase Storage ayarlarını kontrol edin.');
+      }
+      
       // Timeout ile beklemek (5 dakika)
+      debugPrint('⏳ Upload tamamlanması bekleniyor...');
       final snapshot = await uploadTask.timeout(
-        const Duration(minutes: 5),
+        const Duration(minutes: 10),
         onTimeout: () {
+          debugPrint('❌ Upload zaman aşımına uğradı (10 dakika)');
           uploadTask.cancel();
-          throw Exception('Yükleme zaman aşımına uğradı. Lütfen tekrar deneyin.');
+          throw Exception('Yükleme zaman aşımına uğradı. Ağ bağlantınızı kontrol edin ve tekrar deneyin.');
         },
       );
       
+      debugPrint('✅ Upload tamamlandı, durum: ${snapshot.state}');
+      
       await _uploadProgressSubscription?.cancel();
       _uploadProgressSubscription = null;
+      
+      if (snapshot.state != TaskState.success) {
+        throw Exception('Upload başarısız oldu. Durum: ${snapshot.state}');
+      }
       
       if (mounted) {
         setState(() {
@@ -1155,16 +1331,24 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
         });
       }
       
-      // Download URL al (timeout ile)
-      final downloadUrl = await snapshot.ref.getDownloadURL().timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw Exception('Download URL alınamadı. Lütfen tekrar deneyin.');
-        },
-      );
+      // Public URL oluştur (daha güvenilir, süresi dolmaz)
+      final bucket = snapshot.ref.storage.app.options.storageBucket;
+      final publicUrl = 'https://storage.googleapis.com/$bucket/${snapshot.ref.fullPath}';
       
-      debugPrint('✅ Download URL alındı: $downloadUrl');
-      return downloadUrl;
+      debugPrint('🔗 Public URL oluşturuldu: $publicUrl');
+      
+      // Alternatif olarak download URL de al (fallback için)
+      try {
+        final downloadUrl = await snapshot.ref.getDownloadURL().timeout(
+          const Duration(seconds: 10),
+        );
+        debugPrint('✅ Download URL de alındı (fallback): $downloadUrl');
+        // Public URL'yi tercih et, ama download URL de çalışıyorsa onu kullan
+        return publicUrl;
+      } catch (e) {
+        debugPrint('⚠️ Download URL alınamadı, public URL kullanılıyor: $e');
+        return publicUrl;
+      }
     } on FirebaseException catch (e) {
       await _uploadProgressSubscription?.cancel();
       _uploadProgressSubscription = null;
@@ -1187,7 +1371,11 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
       rethrow;
     }
   }
+  */ // Yorum bloğu kapatıldı
 
+  // Kullanılmıyor - Firebase Storage yerine Base64 kullanılıyor
+  // ignore: unused_element
+  /* Kaldırıldı - Firebase Storage artık kullanılmıyor
   Future<String> _uploadMobileFile(File file, String productId) async {
     // Use AdminService if available, otherwise direct upload
     final storage = FirebaseStorage.instance;
@@ -1197,7 +1385,13 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
 
     final uploadTask = ref.putFile(
       file,
-      SettableMetadata(contentType: 'image/jpeg'),
+      SettableMetadata(
+        contentType: 'image/jpeg',
+        cacheControl: 'public, max-age=31536000', // 1 yıl cache
+        customMetadata: {
+          'public': 'true', // Public erişim için işaret
+        },
+      ),
     );
 
     // Track progress with proper subscription management
@@ -1214,35 +1408,68 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
       (snapshot) {
         if (!mounted) return;
         
-        if (snapshot.totalBytes > 0) {
-          final progress = snapshot.bytesTransferred / snapshot.totalBytes;
-          final clampedProgress = progress.clamp(0.05, 0.95);
-          setState(() {
-            _uploadProgress = clampedProgress;
-          });
-        } else if (snapshot.bytesTransferred > 0) {
-          if (mounted) {
-            setState(() {
-              _uploadProgress = 0.1;
-            });
-          }
-        }
+        debugPrint('📊 Upload snapshot: state=${snapshot.state}, bytesTransferred=${snapshot.bytesTransferred}, totalBytes=${snapshot.totalBytes}');
         
+        // State kontrolü öncelikli
         if (snapshot.state == TaskState.success) {
+          debugPrint('✅ Upload başarıyla tamamlandı');
           if (mounted) {
             setState(() {
               _uploadProgress = 1.0;
             });
           }
+          return;
         } else if (snapshot.state == TaskState.error) {
+          debugPrint('❌ Upload hatası: ${snapshot.state}');
           if (mounted) {
             setState(() {
               _uploadProgress = 0.0;
+              _isUploading = false;
+            });
+            _showError('Yükleme hatası: Upload başarısız oldu');
+          }
+          return;
+        } else if (snapshot.state == TaskState.canceled) {
+          debugPrint('⚠️ Upload iptal edildi');
+          if (mounted) {
+            setState(() {
+              _uploadProgress = 0.0;
+              _isUploading = false;
+            });
+          }
+          return;
+        }
+        
+        // Progress hesaplama - totalBytes kontrolü
+        if (snapshot.totalBytes > 0) {
+          final progress = snapshot.bytesTransferred / snapshot.totalBytes;
+          // Gerçek progress'i göster, minimum %5, maksimum %95
+          final clampedProgress = progress.clamp(0.05, 0.95);
+          debugPrint('📈 Progress: ${(clampedProgress * 100).toStringAsFixed(1)}% (${snapshot.bytesTransferred}/${snapshot.totalBytes} bytes)');
+          if (mounted) {
+            setState(() {
+              _uploadProgress = clampedProgress;
+            });
+          }
+        } else if (snapshot.state == TaskState.running) {
+          // Upload başladı ama totalBytes henüz bilinmiyor
+          // Yavaş yavaş artır ama gerçek progress gelene kadar çok yüksek çıkarma
+          if (mounted && _uploadProgress < 0.2) {
+            setState(() {
+              _uploadProgress = (_uploadProgress + 0.02).clamp(0.05, 0.2);
+            });
+          }
+        } else if (snapshot.bytesTransferred > 0) {
+          // Bytes transfer ediliyor ama totalBytes bilinmiyor
+          if (mounted && _uploadProgress < 0.15) {
+            setState(() {
+              _uploadProgress = 0.1;
             });
           }
         }
       },
       onError: (error) {
+        debugPrint('❌ Progress listener hatası: $error');
         if (mounted) {
           setState(() {
             _uploadProgress = 0.0;
@@ -1255,17 +1482,42 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
     );
 
     try {
+      // Upload task'ın başladığını kontrol et
+      debugPrint('⏳ Upload task durumu kontrol ediliyor...');
+
+      // Daha uzun süre bekle ve task durumunu kontrol et (2 saniye)
+      await Future.delayed(const Duration(seconds: 2));
+      final initialSnapshot = uploadTask.snapshot;
+      debugPrint('📊 İlk snapshot durumu: state=${initialSnapshot.state}, bytesTransferred=${initialSnapshot.bytesTransferred}');
+
+      if (initialSnapshot.state == TaskState.error) {
+        throw Exception('Upload başlatılamadı. Lütfen Firebase Storage ayarlarını kontrol edin.');
+      }
+
+      // Eğer hala running durumda ama hiç byte transfer edilmediyse, uyarı ver
+      if (initialSnapshot.state == TaskState.running && initialSnapshot.bytesTransferred == 0) {
+        debugPrint('⚠️ Upload başladı ama henüz veri transfer edilmedi. Ağ bağlantısını kontrol edin.');
+      }
+      
       // Timeout ile beklemek (5 dakika)
+      debugPrint('⏳ Upload tamamlanması bekleniyor...');
       final snapshot = await uploadTask.timeout(
-        const Duration(minutes: 5),
+        const Duration(minutes: 10),
         onTimeout: () {
+          debugPrint('❌ Upload zaman aşımına uğradı (10 dakika)');
           uploadTask.cancel();
-          throw Exception('Yükleme zaman aşımına uğradı. Lütfen tekrar deneyin.');
+          throw Exception('Yükleme zaman aşımına uğradı. Ağ bağlantınızı kontrol edin ve tekrar deneyin.');
         },
       );
       
+      debugPrint('✅ Upload tamamlandı, durum: ${snapshot.state}');
+      
       await _uploadProgressSubscription?.cancel();
       _uploadProgressSubscription = null;
+      
+      if (snapshot.state != TaskState.success) {
+        throw Exception('Upload başarısız oldu. Durum: ${snapshot.state}');
+      }
       
       if (mounted) {
         setState(() {
@@ -1273,15 +1525,24 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
         });
       }
       
-      // Download URL al (timeout ile)
-      final downloadUrl = await snapshot.ref.getDownloadURL().timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw Exception('Download URL alınamadı. Lütfen tekrar deneyin.');
-        },
-      );
+      // Public URL oluştur (daha güvenilir, süresi dolmaz)
+      final bucket = snapshot.ref.storage.app.options.storageBucket;
+      final publicUrl = 'https://storage.googleapis.com/$bucket/${snapshot.ref.fullPath}';
       
-      return downloadUrl;
+      debugPrint('🔗 Public URL oluşturuldu: $publicUrl');
+      
+      // Alternatif olarak download URL de al (fallback için)
+      try {
+        final downloadUrl = await snapshot.ref.getDownloadURL().timeout(
+          const Duration(seconds: 10),
+        );
+        debugPrint('✅ Download URL de alındı (fallback): $downloadUrl');
+        // Public URL'yi tercih et, ama download URL de çalışıyorsa onu kullan
+        return publicUrl;
+      } catch (e) {
+        debugPrint('⚠️ Download URL alınamadı, public URL kullanılıyor: $e');
+        return publicUrl;
+      }
     } on FirebaseException catch (e) {
       await _uploadProgressSubscription?.cancel();
       _uploadProgressSubscription = null;
@@ -1301,22 +1562,248 @@ class ProfessionalImageUploaderState extends State<ProfessionalImageUploader> {
       rethrow;
     }
   }
+  */ // Yorum bloğu kapatıldı
 
+  // Mobile cropped image upload - Kaldırıldı
+  /* Kaldırıldı - Firebase Storage artık kullanılmıyor
+  Future<String> _uploadMobileCroppedImage(Uint8List imageBytes, String productId) async {
+    debugPrint('📤 Mobile kırpılmış resim yükleme başlatılıyor...');
+    debugPrint('Resim boyutu: ${imageBytes.length} bytes');
+
+    final storage = FirebaseStorage.instance;
+    debugPrint('Storage bucket: ${storage.app.options.storageBucket}');
+
+    final fileName = 'product_images/$productId/${DateTime.now().millisecondsSinceEpoch}.jpg';
+    debugPrint('Dosya yolu: $fileName');
+
+    final ref = storage.ref().child(fileName);
+    debugPrint('Reference oluşturuldu: ${ref.fullPath}');
+
+    debugPrint('Upload task başlatılıyor...');
+    final uploadTask = ref.putData(
+      imageBytes,
+      SettableMetadata(
+        contentType: 'image/jpeg',
+        cacheControl: 'public, max-age=31536000', // 1 yıl cache
+        customMetadata: {
+          'public': 'true', // Public erişim için işaret
+        },
+      ),
+    );
+    debugPrint('Upload task oluşturuldu');
+
+    // Track progress with proper subscription management
+    _uploadProgressSubscription?.cancel();
+
+    // İlk progress'i hemen göster
+    if (mounted) {
+      setState(() {
+        _uploadProgress = 0.05; // %5 başlangıç
+      });
+    }
+
+    _uploadProgressSubscription = uploadTask.snapshotEvents.listen(
+      (snapshot) {
+        if (!mounted) return;
+
+        debugPrint('📊 Upload snapshot: state=${snapshot.state}, bytesTransferred=${snapshot.bytesTransferred}, totalBytes=${snapshot.totalBytes}');
+
+        // State kontrolü öncelikli
+        if (snapshot.state == TaskState.success) {
+          debugPrint('✅ Upload başarıyla tamamlandı');
+          if (mounted) {
+            setState(() {
+              _uploadProgress = 1.0;
+            });
+          }
+          return;
+        } else if (snapshot.state == TaskState.error) {
+          debugPrint('❌ Upload hatası: ${snapshot.state}');
+          if (mounted) {
+            setState(() {
+              _uploadProgress = 0.0;
+              _isUploading = false;
+            });
+            _showError('Yükleme hatası: Upload başarısız oldu');
+          }
+          return;
+        } else if (snapshot.state == TaskState.canceled) {
+          debugPrint('⚠️ Upload iptal edildi');
+          if (mounted) {
+            setState(() {
+              _uploadProgress = 0.0;
+              _isUploading = false;
+            });
+          }
+          return;
+        }
+
+        // Progress hesaplama - totalBytes kontrolü
+        if (snapshot.totalBytes > 0) {
+          final progress = snapshot.bytesTransferred / snapshot.totalBytes;
+          // Gerçek progress'i göster, minimum %5, maksimum %95
+          final clampedProgress = progress.clamp(0.05, 0.95);
+          debugPrint('📈 Progress: ${(clampedProgress * 100).toStringAsFixed(1)}% (${snapshot.bytesTransferred}/${snapshot.totalBytes} bytes)');
+          if (mounted) {
+            setState(() {
+              _uploadProgress = clampedProgress;
+            });
+          }
+        } else if (snapshot.state == TaskState.running) {
+          // Upload başladı ama totalBytes henüz bilinmiyor
+          // Yavaş yavaş artır ama gerçek progress gelene kadar çok yüksek çıkarma
+          if (mounted && _uploadProgress < 0.2) {
+            setState(() {
+              _uploadProgress = (_uploadProgress + 0.02).clamp(0.05, 0.2);
+            });
+          }
+        } else if (snapshot.bytesTransferred > 0) {
+          // Bytes transfer ediliyor ama totalBytes bilinmiyor
+          if (mounted && _uploadProgress < 0.15) {
+            setState(() {
+              _uploadProgress = 0.1;
+            });
+          }
+        }
+      },
+      onError: (error) {
+        debugPrint('❌ Progress listener hatası: $error');
+        if (mounted) {
+          setState(() {
+            _uploadProgress = 0.0;
+            _isUploading = false;
+          });
+          _showError('Yükleme hatası: $error');
+        }
+      },
+      cancelOnError: false,
+    );
+
+    try {
+      // Upload task'ın başladığını kontrol et
+      debugPrint('⏳ Upload task durumu kontrol ediliyor...');
+
+    // Daha uzun süre bekle ve task durumunu kontrol et (2 saniye)
+    await Future.delayed(const Duration(seconds: 2));
+    final initialSnapshot = uploadTask.snapshot;
+    debugPrint('📊 İlk snapshot durumu: state=${initialSnapshot.state}, bytesTransferred=${initialSnapshot.bytesTransferred}, totalBytes=${initialSnapshot.totalBytes}');
+
+    // Eğer hala running durumda ama hiç byte transfer edilmediyse, uyarı ver
+    if (initialSnapshot.state == TaskState.running && initialSnapshot.bytesTransferred == 0) {
+      debugPrint('⚠️ Upload başladı ama henüz veri transfer edilmedi. Ağ bağlantısını kontrol edin.');
+      debugPrint('   - Total bytes: ${initialSnapshot.totalBytes}');
+      debugPrint('   - Firebase Storage bucket: ${storage.app.options.storageBucket}');
+    }
+
+      if (initialSnapshot.state == TaskState.error) {
+        throw Exception('Upload başlatılamadı. Lütfen Firebase Storage ayarlarını kontrol edin.');
+      }
+
+      // Firebase Storage bucket kontrolü
+      debugPrint('🔍 Firebase Storage bucket kontrolü...');
+      try {
+        // Bucket erişimi test et
+        final testRef = storage.ref('test-connection.txt');
+        await testRef.putString('test', metadata: SettableMetadata(contentType: 'text/plain'));
+        await testRef.delete();
+        debugPrint('✅ Firebase Storage bucket aktif ve erişilebilir');
+      } catch (e) {
+        debugPrint('❌ Firebase Storage bucket sorunu: $e');
+        if (e.toString().contains('storage/unauthorized') || e.toString().contains('permission-denied')) {
+          throw Exception('Firebase Storage erişim izni yok. Firebase Console\'dan Storage\'u aktifleştirin ve CORS ayarlarını yapın.');
+        } else if (e.toString().contains('storage/invalid-argument')) {
+          throw Exception('Firebase Storage bucket yapılandırılmamış. Firebase Console\'dan Storage\'u aktifleştirin.');
+        } else {
+          debugPrint('⚠️ Storage bağlantı testi başarısız, devam ediliyor: $e');
+        }
+      }
+
+      // Timeout ile beklemek (10 dakika - daha uzun süre ver)
+      debugPrint('⏳ Upload tamamlanması bekleniyor...');
+      final snapshot = await uploadTask.timeout(
+        const Duration(minutes: 10),
+        onTimeout: () {
+          debugPrint('❌ Upload zaman aşımına uğradı (10 dakika)');
+          debugPrint('   - Son snapshot kontrolü...');
+          final finalSnapshot = uploadTask.snapshot;
+          debugPrint('   - Final state: ${finalSnapshot.state}');
+          debugPrint('   - Final bytes: ${finalSnapshot.bytesTransferred}/${finalSnapshot.totalBytes}');
+          uploadTask.cancel();
+          throw Exception('Yükleme zaman aşımına uğradı. Ağ bağlantınızı kontrol edin ve tekrar deneyin.');
+        },
+      );
+
+      debugPrint('✅ Upload tamamlandı, durum: ${snapshot.state}');
+
+      await _uploadProgressSubscription?.cancel();
+      _uploadProgressSubscription = null;
+
+      if (snapshot.state != TaskState.success) {
+        throw Exception('Upload başarısız oldu. Durum: ${snapshot.state}');
+      }
+
+      if (mounted) {
+        setState(() {
+          _uploadProgress = 1.0;
+        });
+      }
+
+      // Download URL al (timeout ile)
+      final downloadUrl = await snapshot.ref.getDownloadURL().timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception('Download URL alınamadı. Lütfen tekrar deneyin.');
+        },
+      );
+
+      return downloadUrl;
+    } on FirebaseException catch (e) {
+      await _uploadProgressSubscription?.cancel();
+      _uploadProgressSubscription = null;
+
+      debugPrint('❌ FirebaseException: ${e.code} - ${e.message}');
+
+      String errorMessage = 'Yükleme hatası: ';
+      if (e.code == 'storage/retry-limit-exceeded') {
+        errorMessage = 'Yükleme çok uzun sürdü. Lütfen daha küçük bir resim seçin veya internet bağlantınızı kontrol edin.';
+      } else if (e.code == 'storage/unauthorized') {
+        errorMessage = 'Yükleme izni yok. Lütfen giriş yapın.';
+      } else if (e.code == 'storage/canceled') {
+        errorMessage = 'Yükleme iptal edildi.';
+      } else {
+        errorMessage = 'Firebase Storage hatası: ${e.message ?? e.code}';
+      }
+      throw Exception(errorMessage);
+    } catch (e) {
+      await _uploadProgressSubscription?.cancel();
+      _uploadProgressSubscription = null;
+      debugPrint('❌ Genel hata: $e');
+      rethrow;
+    }
+  }
+  */ // Son yorum bloğu kapatıldı
+
+  // Kullanılmıyor - Firebase Storage yerine Base64 kullanılıyor
+  // ignore: unused_element
+  /* Kaldırıldı - Firebase Storage artık kullanılmıyor
   Future<File> _saveCroppedBytesToFile(Uint8List bytes) async {
     final tempDir = Directory.systemTemp;
     final tempFile = File('${tempDir.path}/cropped_${DateTime.now().millisecondsSinceEpoch}.jpg');
     await tempFile.writeAsBytes(bytes);
     return tempFile;
   }
+  */
 
   @override
   void dispose() {
-    _uploadProgressSubscription?.cancel();
+    // Firebase Storage kaldırıldı - artık kullanılmıyor
+    // _uploadProgressSubscription?.cancel();
     super.dispose();
   }
 
   void _removeImage() {
-    _uploadProgressSubscription?.cancel();
+    // Firebase Storage kaldırıldı - artık kullanılmıyor
+    // _uploadProgressSubscription?.cancel();
     setState(() {
       _selectedWebFile = null;
       _selectedMobileFile = null;
@@ -1362,6 +1849,16 @@ class _WebImageCropDialogState extends State<_WebImageCropDialog> {
   double _cropHeight = 100.0;
   late double _imageWidth;
   late double _imageHeight;
+  Uint8List? _cachedImageBytes; // Cache resim bytes
+  int _lastUpdateFrame = 0; // Frame-based throttle
+  double _displayWidth = 0.0;
+  double _displayHeight = 0.0;
+  double _scaleX = 1.0;
+  double _scaleY = 1.0;
+  double? _cachedDisplayCropX;
+  double? _cachedDisplayCropY;
+  double? _cachedDisplayCropWidth;
+  double? _cachedDisplayCropHeight;
 
   @override
   void initState() {
@@ -1369,23 +1866,47 @@ class _WebImageCropDialogState extends State<_WebImageCropDialog> {
     _imageWidth = widget.originalImage.width.toDouble();
     _imageHeight = widget.originalImage.height.toDouble();
     
-    // Calculate initial crop size (square)
-    final size = _imageWidth < _imageHeight ? _imageWidth : _imageHeight;
-    _cropWidth = size * 0.8;
-    _cropHeight = _cropWidth / widget.aspectRatio;
+    // Calculate initial crop size - resmin tamamını kapsayacak şekilde
+    // Aspect ratio'ya göre en büyük alanı seç
+    if (widget.aspectRatio >= 1.0) {
+      // Yatay veya kare
+      _cropWidth = _imageWidth * 0.98; // Neredeyse tam genişlik
+      _cropHeight = _cropWidth / widget.aspectRatio;
+      if (_cropHeight > _imageHeight * 0.98) {
+        _cropHeight = _imageHeight * 0.98;
+        _cropWidth = _cropHeight * widget.aspectRatio;
+      }
+    } else {
+      // Dikey
+      _cropHeight = _imageHeight * 0.98; // Neredeyse tam yükseklik
+      _cropWidth = _cropHeight * widget.aspectRatio;
+      if (_cropWidth > _imageWidth * 0.98) {
+        _cropWidth = _imageWidth * 0.98;
+        _cropHeight = _cropWidth / widget.aspectRatio;
+      }
+    }
     _cropX = (_imageWidth - _cropWidth) / 2;
     _cropY = (_imageHeight - _cropHeight) / 2;
+    
+    // Resmi cache'le (performans için)
+    _cachedImageBytes = Uint8List.fromList(img.encodeJpg(widget.originalImage));
   }
 
   @override
   Widget build(BuildContext context) {
-    final imageBytes = Uint8List.fromList(img.encodeJpg(widget.originalImage));
+    // Cache'lenmiş resmi kullan (performans için)
+    final imageBytes = _cachedImageBytes ?? Uint8List.fromList(img.encodeJpg(widget.originalImage));
+    
+    // Ekran boyutunu al
+    final screenSize = MediaQuery.of(context).size;
+    final dialogWidth = (screenSize.width * 0.9).clamp(800.0, 1200.0);
+    final dialogHeight = (screenSize.height * 0.85).clamp(700.0, 1000.0);
     
     return Dialog(
       child: Container(
-        width: 600,
-        height: 700,
-        padding: const EdgeInsets.all(16),
+        width: dialogWidth,
+        height: dialogHeight,
+        padding: const EdgeInsets.all(20),
         child: Column(
           children: [
             Row(
@@ -1408,21 +1929,74 @@ class _WebImageCropDialogState extends State<_WebImageCropDialog> {
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
+                  color: Colors.grey[100],
                   border: Border.all(color: Colors.grey[300]!),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    return Stack(
-                      children: [
-                        Center(
-                          child: Image.memory(
-                            imageBytes,
-                            fit: BoxFit.contain,
+                    // Resim boyutlarını hesapla - tam sığacak şekilde
+                    final imageAspectRatio = _imageWidth / _imageHeight;
+                    final containerAspectRatio = constraints.maxWidth / constraints.maxHeight;
+                    
+                    double displayWidth, displayHeight;
+                    if (imageAspectRatio > containerAspectRatio) {
+                      displayWidth = constraints.maxWidth * 0.98; // %98 padding
+                      displayHeight = displayWidth / imageAspectRatio;
+                    } else {
+                      displayHeight = constraints.maxHeight * 0.98;
+                      displayWidth = displayHeight * imageAspectRatio;
+                    }
+                    
+                    // Scale hesapla
+                    final scaleX = displayWidth / _imageWidth;
+                    final scaleY = displayHeight / _imageHeight;
+                    
+                    // State'i güncelle
+                    if (_displayWidth != displayWidth || _displayHeight != displayHeight) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) {
+                          setState(() {
+                            _displayWidth = displayWidth;
+                            _displayHeight = displayHeight;
+                            _scaleX = scaleX;
+                            _scaleY = scaleY;
+                            _cachedDisplayCropX = null; // Cache'i temizle
+                          });
+                        }
+                      });
+                    } else {
+                      _displayWidth = displayWidth;
+                      _displayHeight = displayHeight;
+                      _scaleX = scaleX;
+                      _scaleY = scaleY;
+                    }
+                    
+                    return RepaintBoundary(
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          // Resim - tam boyutta göster
+                          Positioned(
+                            left: (constraints.maxWidth - displayWidth) / 2,
+                            top: (constraints.maxHeight - displayHeight) / 2,
+                            child: RepaintBoundary(
+                              child: Image.memory(
+                                imageBytes,
+                                width: displayWidth,
+                                height: displayHeight,
+                                fit: BoxFit.fill, // Tam sığdır
+                                gaplessPlayback: true,
+                                filterQuality: FilterQuality.medium, // Orta kalite (görünürlük için)
+                                isAntiAlias: true, // Anti-aliasing açık (daha iyi görünüm)
+                              ),
+                            ),
                           ),
-                        ),
-                        _buildCropOverlay(constraints),
-                      ],
+                          // Kırpma overlay
+                          if (_displayWidth > 0 && _displayHeight > 0)
+                            _buildCropOverlay(constraints),
+                        ],
+                      ),
                     );
                   },
                 ),
@@ -1454,96 +2028,266 @@ class _WebImageCropDialogState extends State<_WebImageCropDialog> {
   }
 
   Widget _buildCropOverlay(BoxConstraints constraints) {
-    // Calculate image display size
-    final imageAspectRatio = _imageWidth / _imageHeight;
-    final containerAspectRatio = constraints.maxWidth / constraints.maxHeight;
-    
-    double displayWidth, displayHeight;
-    if (imageAspectRatio > containerAspectRatio) {
-      displayWidth = constraints.maxWidth;
-      displayHeight = constraints.maxWidth / imageAspectRatio;
-    } else {
-      displayHeight = constraints.maxHeight;
-      displayWidth = constraints.maxHeight * imageAspectRatio;
+    // Cache'lenmiş değerleri kullan (performans için)
+    if (_cachedDisplayCropX == null) {
+      _cachedDisplayCropX = _cropX * _scaleX;
+      _cachedDisplayCropY = _cropY * _scaleY;
+      _cachedDisplayCropWidth = _cropWidth * _scaleX;
+      _cachedDisplayCropHeight = _cropHeight * _scaleY;
     }
     
-    // Scale crop coordinates to display size
-    final scaleX = displayWidth / _imageWidth;
-    final scaleY = displayHeight / _imageHeight;
-    final displayCropX = _cropX * scaleX;
-    final displayCropY = _cropY * scaleY;
-    final displayCropWidth = _cropWidth * scaleX;
-    final displayCropHeight = _cropHeight * scaleY;
+    final displayCropX = _cachedDisplayCropX!;
+    final displayCropY = _cachedDisplayCropY!;
+    final displayCropWidth = _cachedDisplayCropWidth!;
+    final displayCropHeight = _cachedDisplayCropHeight!;
     
-    return Positioned(
-      left: (constraints.maxWidth - displayWidth) / 2 + displayCropX,
-      top: (constraints.maxHeight - displayHeight) / 2 + displayCropY,
-      child: GestureDetector(
-        onPanUpdate: (details) {
-          setState(() {
-            _cropX += details.delta.dx / scaleX;
-            _cropY += details.delta.dy / scaleY;
-            
-            // Constrain to image bounds
-            _cropX = _cropX.clamp(0.0, _imageWidth - _cropWidth);
-            _cropY = _cropY.clamp(0.0, _imageHeight - _cropHeight);
-          });
-        },
-        child: Container(
-          width: displayCropWidth,
-          height: displayCropHeight,
-          decoration: BoxDecoration(
-            border: Border.all(color: Colors.blue, width: 2),
-            color: Colors.transparent,
-          ),
-          child: Stack(
-            children: [
-              // Corner handles
-              ..._buildCornerHandles(),
-            ],
+    final imageLeft = (constraints.maxWidth - _displayWidth) / 2;
+    final imageTop = (constraints.maxHeight - _displayHeight) / 2;
+    final absoluteCropX = imageLeft + displayCropX;
+    final absoluteCropY = imageTop + displayCropY;
+    
+    return Stack(
+      children: [
+        // Overlay mask - tüm ekranı kapla ama tıklamaları engelleme
+        _buildOverlayMask(constraints, absoluteCropX, absoluteCropY, displayCropWidth, displayCropHeight),
+        // Kırpma kutusu ve handle'lar - tıklanabilir
+        Positioned(
+          left: absoluteCropX,
+          top: absoluteCropY,
+          child: GestureDetector(
+            onPanUpdate: (details) {
+              // Minimum throttle - 8ms (120 FPS teorik, pratikte 60+ FPS)
+              final now = DateTime.now().millisecondsSinceEpoch;
+              if (now - _lastUpdateFrame < 8) {
+                // Hızlı güncelleme - değişkenleri güncelle ama setState'i atla
+                _cropX = (_cropX + details.delta.dx / _scaleX).clamp(0.0, _imageWidth - _cropWidth);
+                _cropY = (_cropY + details.delta.dy / _scaleY).clamp(0.0, _imageHeight - _cropHeight);
+                _cachedDisplayCropX = null; // Cache'i temizle
+                return;
+              }
+              _lastUpdateFrame = now;
+              
+              // setState ile güncelle
+              final newCropX = (_cropX + details.delta.dx / _scaleX).clamp(0.0, _imageWidth - _cropWidth);
+              final newCropY = (_cropY + details.delta.dy / _scaleY).clamp(0.0, _imageHeight - _cropHeight);
+              
+              if (newCropX != _cropX || newCropY != _cropY) {
+                _cropX = newCropX;
+                _cropY = newCropY;
+                _cachedDisplayCropX = null; // Cache'i temizle
+                setState(() {}); // Minimal setState
+              }
+            },
+            child: RepaintBoundary(
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  // Kırpma kutusu border
+                  Container(
+                    width: displayCropWidth,
+                    height: displayCropHeight,
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: Colors.blue[700]!,
+                        width: 2.5,
+                      ),
+                      color: Colors.transparent,
+                    ),
+                  ),
+                  // Corner handles
+                  ..._buildCornerHandles(0, 0, displayCropWidth, displayCropHeight),
+                ],
+              ),
+            ),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildOverlayMask(BoxConstraints constraints, double absoluteCropX, double absoluteCropY, double cropWidth, double cropHeight) {
+    return IgnorePointer(
+      ignoring: true, // Overlay mask tıklamaları engellemez, sadece görsel
+      child: Stack(
+        children: [
+          // Üst overlay
+          if (absoluteCropY > 0)
+            Positioned(
+              left: 0,
+              top: 0,
+              right: 0,
+              height: absoluteCropY,
+              child: Container(color: Colors.black.withOpacity(0.5)),
+            ),
+          // Alt overlay
+          if (absoluteCropY + cropHeight < constraints.maxHeight)
+            Positioned(
+              left: 0,
+              top: absoluteCropY + cropHeight,
+              right: 0,
+              bottom: 0,
+              child: Container(color: Colors.black.withOpacity(0.5)),
+            ),
+          // Sol overlay
+          if (absoluteCropX > 0)
+            Positioned(
+              left: 0,
+              top: absoluteCropY,
+              width: absoluteCropX,
+              height: cropHeight,
+              child: Container(color: Colors.black.withOpacity(0.5)),
+            ),
+          // Sağ overlay
+          if (absoluteCropX + cropWidth < constraints.maxWidth)
+            Positioned(
+              left: absoluteCropX + cropWidth,
+              top: absoluteCropY,
+              right: 0,
+              height: cropHeight,
+              child: Container(color: Colors.black.withOpacity(0.5)),
+            ),
+        ],
       ),
     );
   }
 
-  List<Widget> _buildCornerHandles() {
+  List<Widget> _buildCornerHandles(double cropX, double cropY, double cropWidth, double cropHeight) {
     return [
       // Top-left
       Positioned(
-        left: -8,
-        top: -8,
-        child: _buildHandle(),
+        left: cropX - 10,
+        top: cropY - 10,
+        child: GestureDetector(
+          onPanUpdate: (details) {
+            final now = DateTime.now().millisecondsSinceEpoch;
+            if (now - _lastUpdateFrame < 8) {
+              // Hızlı güncelleme
+              final deltaX = details.delta.dx / _scaleX;
+              final deltaY = details.delta.dy / _scaleY;
+              _cropX = (_cropX + deltaX).clamp(0.0, _imageWidth - _cropWidth);
+              _cropY = (_cropY + deltaY).clamp(0.0, _imageHeight - _cropHeight);
+              _cropWidth = (_cropWidth - deltaX).clamp(50.0, _imageWidth - _cropX);
+              _cropHeight = (_cropHeight - deltaY).clamp(50.0, _imageHeight - _cropY);
+              _cachedDisplayCropX = null;
+              return;
+            }
+            _lastUpdateFrame = now;
+            
+            final deltaX = details.delta.dx / _scaleX;
+            final deltaY = details.delta.dy / _scaleY;
+            _cropX = (_cropX + deltaX).clamp(0.0, _imageWidth - _cropWidth);
+            _cropY = (_cropY + deltaY).clamp(0.0, _imageHeight - _cropHeight);
+            _cropWidth = (_cropWidth - deltaX).clamp(50.0, _imageWidth - _cropX);
+            _cropHeight = (_cropHeight - deltaY).clamp(50.0, _imageHeight - _cropY);
+            _cachedDisplayCropX = null;
+            setState(() {});
+          },
+          child: _buildHandle(),
+        ),
       ),
       // Top-right
       Positioned(
-        right: -8,
-        top: -8,
-        child: _buildHandle(),
+        left: cropX + cropWidth - 10,
+        top: cropY - 10,
+        child: GestureDetector(
+          onPanUpdate: (details) {
+            final now = DateTime.now().millisecondsSinceEpoch;
+            if (now - _lastUpdateFrame < 8) {
+              final deltaX = details.delta.dx / _scaleX;
+              final deltaY = details.delta.dy / _scaleY;
+              _cropY = (_cropY + deltaY).clamp(0.0, _imageHeight - _cropHeight);
+              _cropWidth = (_cropWidth + deltaX).clamp(50.0, _imageWidth - _cropX);
+              _cropHeight = (_cropHeight - deltaY).clamp(50.0, _imageHeight - _cropY);
+              _cachedDisplayCropX = null;
+              return;
+            }
+            _lastUpdateFrame = now;
+            
+            final deltaX = details.delta.dx / _scaleX;
+            final deltaY = details.delta.dy / _scaleY;
+            _cropY = (_cropY + deltaY).clamp(0.0, _imageHeight - _cropHeight);
+            _cropWidth = (_cropWidth + deltaX).clamp(50.0, _imageWidth - _cropX);
+            _cropHeight = (_cropHeight - deltaY).clamp(50.0, _imageHeight - _cropY);
+            _cachedDisplayCropX = null;
+            setState(() {});
+          },
+          child: _buildHandle(),
+        ),
       ),
       // Bottom-left
       Positioned(
-        left: -8,
-        bottom: -8,
-        child: _buildHandle(),
+        left: cropX - 10,
+        top: cropY + cropHeight - 10,
+        child: GestureDetector(
+          onPanUpdate: (details) {
+            final now = DateTime.now().millisecondsSinceEpoch;
+            if (now - _lastUpdateFrame < 8) {
+              final deltaX = details.delta.dx / _scaleX;
+              final deltaY = details.delta.dy / _scaleY;
+              _cropX = (_cropX + deltaX).clamp(0.0, _imageWidth - _cropWidth);
+              _cropWidth = (_cropWidth - deltaX).clamp(50.0, _imageWidth - _cropX);
+              _cropHeight = (_cropHeight + deltaY).clamp(50.0, _imageHeight - _cropY);
+              _cachedDisplayCropX = null;
+              return;
+            }
+            _lastUpdateFrame = now;
+            
+            final deltaX = details.delta.dx / _scaleX;
+            final deltaY = details.delta.dy / _scaleY;
+            _cropX = (_cropX + deltaX).clamp(0.0, _imageWidth - _cropWidth);
+            _cropWidth = (_cropWidth - deltaX).clamp(50.0, _imageWidth - _cropX);
+            _cropHeight = (_cropHeight + deltaY).clamp(50.0, _imageHeight - _cropY);
+            _cachedDisplayCropX = null;
+            setState(() {});
+          },
+          child: _buildHandle(),
+        ),
       ),
       // Bottom-right
       Positioned(
-        right: -8,
-        bottom: -8,
-        child: _buildHandle(),
+        left: cropX + cropWidth - 10,
+        top: cropY + cropHeight - 10,
+        child: GestureDetector(
+          onPanUpdate: (details) {
+            final now = DateTime.now().millisecondsSinceEpoch;
+            if (now - _lastUpdateFrame < 8) {
+              final deltaX = details.delta.dx / _scaleX;
+              final deltaY = details.delta.dy / _scaleY;
+              _cropWidth = (_cropWidth + deltaX).clamp(50.0, _imageWidth - _cropX);
+              _cropHeight = (_cropHeight + deltaY).clamp(50.0, _imageHeight - _cropY);
+              _cachedDisplayCropX = null;
+              return;
+            }
+            _lastUpdateFrame = now;
+            
+            final deltaX = details.delta.dx / _scaleX;
+            final deltaY = details.delta.dy / _scaleY;
+            _cropWidth = (_cropWidth + deltaX).clamp(50.0, _imageWidth - _cropX);
+            _cropHeight = (_cropHeight + deltaY).clamp(50.0, _imageHeight - _cropY);
+            _cachedDisplayCropX = null;
+            setState(() {});
+          },
+          child: _buildHandle(),
+        ),
       ),
     ];
   }
 
   Widget _buildHandle() {
     return Container(
-      width: 16,
-      height: 16,
+      width: 20,
+      height: 20,
       decoration: BoxDecoration(
-        color: Colors.blue,
-        border: Border.all(color: Colors.white, width: 2),
-        borderRadius: BorderRadius.circular(8),
+        color: Colors.white,
+        border: Border.all(color: Colors.blue[700]!, width: 2.5),
+        borderRadius: BorderRadius.circular(10),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
     );
   }
@@ -1561,4 +2305,37 @@ class _WebImageCropDialogState extends State<_WebImageCropDialog> {
     Navigator.pop(context, croppedBytes);
   }
 }
+
+// Isolate fonksiyonları - Mobile için (UI thread'i bloklamaz)
+// Web'de compute çalışmaz, bu fonksiyonlar sadece mobile'da kullanılır
+// Şu an kullanılmıyor (Base64 yöntemi basitleştirildi) ama ileride gerekebilir
+// ignore: unused_element
+img.Image _decodeImageIsolate(Uint8List bytes) {
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) {
+    throw Exception('Resim decode edilemedi');
+  }
+  return decoded;
+}
+
+// ignore: unused_element
+img.Image _resizeImageIsolate(Map<String, dynamic> params) {
+  final image = params['image'] as img.Image;
+  final width = params['width'] as int;
+  final height = params['height'] as int;
+  return img.copyResize(
+    image,
+    width: width,
+    height: height,
+    interpolation: img.Interpolation.linear,
+  );
+}
+
+// ignore: unused_element
+Uint8List _encodeImageIsolate(Map<String, dynamic> params) {
+  final image = params['image'] as img.Image;
+  final quality = params['quality'] as int;
+  return Uint8List.fromList(img.encodeJpg(image, quality: quality));
+}
+
 

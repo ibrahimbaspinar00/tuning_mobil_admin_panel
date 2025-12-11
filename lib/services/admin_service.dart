@@ -1,8 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
-import 'package:firebase_core/firebase_core.dart';
+// Firebase Storage kaldırıldı - Base64 kullanılıyor
 import 'dart:io';
 import '../model/admin_product.dart';
 import '../model/admin_user.dart';
@@ -11,17 +10,44 @@ import '../model/product.dart';
 
 class AdminService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  // Firebase Storage kaldırıldı - artık kullanılmıyor
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   // Ürün ekleme
   Future<void> addProduct(AdminProduct product) async {
     try {
+      if (kDebugMode) {
+        debugPrint('=== ÜRÜN EKLEME ===');
+        debugPrint('Ürün ID: ${product.id}');
+        debugPrint('Ürün Adı: ${product.name}');
+        debugPrint('Görsel URL: ${product.imageUrl}');
+        debugPrint('URL Uzunluğu: ${product.imageUrl.length} karakter');
+        debugPrint('URL Format: ${product.imageUrl.isNotEmpty ? (product.imageUrl.startsWith('data:') ? 'Base64' : product.imageUrl.startsWith('http') ? 'HTTP URL' : 'Diğer') : 'BOŞ'}');
+      }
+      
+      final productData = product.toFirestore();
+      
+      // imageUrl trim et ve kontrol et
+      if (productData['imageUrl'] != null) {
+        productData['imageUrl'] = productData['imageUrl'].toString().trim();
+        if (kDebugMode) {
+          debugPrint('Trim edilmiş URL: ${productData['imageUrl']}');
+        }
+      }
+      
       await _firestore
           .collection('products')
           .doc(product.id)
-          .set(product.toFirestore());
+          .set(productData);
+      
+      if (kDebugMode) {
+        debugPrint('✅ Ürün başarıyla Firestore\'a kaydedildi');
+        debugPrint('=== ÜRÜN EKLEME TAMAMLANDI ===');
+      }
     } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ Ürün ekleme hatası: $e');
+      }
       throw Exception('Ürün eklenirken hata oluştu: $e');
     }
   }
@@ -29,12 +55,59 @@ class AdminService {
   // Ürün silme
   Future<void> deleteProduct(String productId) async {
     try {
+      if (kDebugMode) {
+        debugPrint('Ürün siliniyor: $productId');
+      }
       await _firestore
           .collection('products')
           .doc(productId)
           .delete();
+      if (kDebugMode) {
+        debugPrint('Ürün başarıyla silindi: $productId');
+      }
     } catch (e) {
+      if (kDebugMode) {
+        debugPrint('Ürün silme hatası: $e');
+      }
+      final errorMsg = e.toString();
+      if (errorMsg.contains('permission-denied') || 
+          errorMsg.contains('permission denied') ||
+          errorMsg.contains('Missing or insufficient permissions')) {
+        throw Exception('Firebase izin hatası: Ürün silme işlemi için gerekli izinler yapılandırılmamış. Lütfen Firebase Console\'dan Firestore Rules\'ı kontrol edin.');
+      }
       throw Exception('Ürün silinirken hata oluştu: $e');
+    }
+  }
+
+  // Debug: Ürünlerin imageUrl formatını kontrol et
+  Future<void> debugProductImageUrls() async {
+    try {
+      final snapshot = await _firestore.collection('products').limit(5).get();
+
+      debugPrint('=== ÜRÜN RESİM URL DEBUG ===');
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final imageUrl = data['imageUrl'] ?? '';
+        debugPrint('Ürün: ${data['name']}');
+        debugPrint('ImageUrl: $imageUrl');
+        if (imageUrl.isNotEmpty) {
+          if (imageUrl.startsWith('data:')) {
+            debugPrint('Format: Base64');
+          } else if (imageUrl.startsWith('https://firebasestorage.googleapis.com/')) {
+            debugPrint('Format: Firebase Storage URL');
+          } else if (imageUrl.startsWith('https://storage.googleapis.com/')) {
+            debugPrint('Format: Google Storage URL');
+          } else {
+            debugPrint('Format: Bilinmiyor');
+          }
+        } else {
+          debugPrint('Format: Boş');
+        }
+        debugPrint('---');
+      }
+      debugPrint('=== DEBUG SONU ===');
+    } catch (e) {
+      debugPrint('Debug hatası: $e');
     }
   }
 
@@ -171,110 +244,24 @@ class AdminService {
     }
   }
 
-  // Resim yükleme
+  // Resim yükleme - Firebase Storage kaldırıldı, artık Base64 kullanılıyor
+  // Bu metod artık kullanılmıyor - ProfessionalImageUploader kullanın
+  @Deprecated('Firebase Storage kaldırıldı. ProfessionalImageUploader widget\'ını kullanın.')
   Future<String> uploadImage(File imageFile, String productId) async {
-    try {
-      String fileName = 'products/$productId/${DateTime.now().millisecondsSinceEpoch}.jpg';
-      Reference ref = _storage.ref().child(fileName);
-      
-      UploadTask uploadTask = ref.putFile(imageFile);
-      TaskSnapshot snapshot = await uploadTask;
-      String downloadUrl = await snapshot.ref.getDownloadURL();
-      
-      return downloadUrl;
-    } catch (e) {
-      throw Exception('Resim yüklenirken hata oluştu: $e');
-    }
+    throw UnimplementedError('Firebase Storage kaldırıldı. ProfessionalImageUploader widget\'ını kullanın.');
   }
 
-  // Firebase Storage bağlantı testi
+  // Firebase Storage bağlantı testi - artık kullanılmıyor
+  @Deprecated('Firebase Storage kaldırıldı.')
   Future<bool> testStorageConnection() async {
-    try {
-      if (Firebase.apps.isEmpty) {
-        print('Debug: Firebase başlatılmamış');
-        return false;
-      }
-      
-      // Test dosyası oluştur
-      final testRef = _storage.ref().child('test/connection_test.txt');
-      await testRef.putString('test');
-      await testRef.delete();
-      
-      print('Debug: Firebase Storage bağlantısı başarılı');
-      return true;
-    } catch (e) {
-      print('Debug: Firebase Storage bağlantı hatası: $e');
-      return false;
-    }
+    // Firebase Storage artık kullanılmıyor, her zaman false döndür
+    return false;
   }
 
-  // Serbest yol ile yükleme (koleksiyon vb. için)
+  // Serbest yol ile yükleme - Firebase Storage kaldırıldı
+  @Deprecated('Firebase Storage kaldırıldı. ProfessionalImageUploader widget\'ını kullanın.')
   Future<String> uploadToPath(File imageFile, String pathPrefix) async {
-    try {
-      // Firebase'in başlatıldığını kontrol et
-      if (!Firebase.apps.isNotEmpty) {
-        throw Exception('Firebase başlatılmamış. Lütfen uygulamayı yeniden başlatın.');
-      }
-      
-      final String fileName = '$pathPrefix/${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final Reference ref = _storage.ref().child(fileName);
-      final UploadTask uploadTask = ref.putFile(imageFile);
-      final TaskSnapshot snapshot = await uploadTask;
-      return await snapshot.ref.getDownloadURL();
-    } on FirebaseException catch (e) {
-      // Daha açıklayıcı Firebase hatası
-      String errorMessage = 'Firebase Storage hatası: ${e.code}';
-      if (e.message != null) {
-        errorMessage += ' - ${e.message}';
-      }
-      
-      // Yaygın hatalar için Türkçe açıklama
-      switch (e.code) {
-        case 'storage/unauthorized':
-          errorMessage = 'Yükleme izni yok. Lütfen giriş yapın.';
-          break;
-        case 'storage/canceled':
-          errorMessage = 'Yükleme iptal edildi.';
-          break;
-        case 'storage/unknown':
-          errorMessage = 'Bilinmeyen Firebase hatası.';
-          break;
-        case 'storage/invalid-argument':
-          errorMessage = 'Geçersiz dosya.';
-          break;
-        case 'storage/invalid-checksum':
-          errorMessage = 'Dosya bozuk.';
-          break;
-        case 'storage/retry-limit-exceeded':
-          errorMessage = 'Çok fazla deneme. Lütfen tekrar deneyin.';
-          break;
-        case 'storage/invalid-format':
-          errorMessage = 'Desteklenmeyen dosya formatı.';
-          break;
-        case 'storage/invalid-event-name':
-          errorMessage = 'Geçersiz işlem.';
-          break;
-        case 'storage/invalid-url':
-          errorMessage = 'Geçersiz URL.';
-          break;
-        case 'storage/no-default-bucket':
-          errorMessage = 'Firebase Storage yapılandırılmamış.';
-          break;
-        case 'storage/cannot-slice-blob':
-          errorMessage = 'Dosya işlenemiyor.';
-          break;
-        case 'storage/server-file-wrong-size':
-          errorMessage = 'Dosya boyutu uyumsuz.';
-          break;
-      }
-      
-      throw Exception(errorMessage);
-    } catch (e) {
-      if (e.toString().contains('no object') || e.toString().contains('Firebase')) {
-        throw Exception('Firebase bağlantı hatası. Lütfen internet bağlantınızı kontrol edin ve uygulamayı yeniden başlatın.');
-      }
-      throw Exception('Dosya yüklenemedi: $e');
-    }
+    throw UnimplementedError('Firebase Storage kaldırıldı. ProfessionalImageUploader widget\'ını kullanın.');
   }
 
   // Kategori ekleme
@@ -661,7 +648,12 @@ class AdminService {
 
   Future<Map<String, dynamic>> getPriceStatistics() async {
     try {
-      final productsSnapshot = await _firestore.collection('products').get();
+      // Sadece aktif ürünleri getir ve limit koy
+      final productsSnapshot = await _firestore
+          .collection('products')
+          .where('isActive', isEqualTo: true)
+          .limit(1000)
+          .get();
       
       if (productsSnapshot.docs.isEmpty) {
         return {
@@ -676,21 +668,25 @@ class AdminService {
       double totalValue = 0.0;
       double minPrice = double.infinity;
       double maxPrice = 0.0;
+      int totalProducts = 0;
       
       for (final doc in productsSnapshot.docs) {
         final data = doc.data();
         final price = (data['price'] as num?)?.toDouble() ?? 0.0;
         final stock = (data['stock'] as num?)?.toInt() ?? 0;
         
-        totalValue += price * stock;
-        if (price < minPrice) minPrice = price;
-        if (price > maxPrice) maxPrice = price;
+        if (price > 0) {
+          totalValue += price * stock;
+          if (price < minPrice) minPrice = price;
+          if (price > maxPrice) maxPrice = price;
+          totalProducts++;
+        }
       }
       
-      final averagePrice = totalValue / productsSnapshot.docs.length;
+      final averagePrice = totalProducts > 0 ? totalValue / totalProducts : 0.0;
       
       return {
-        'totalProducts': productsSnapshot.docs.length,
+        'totalProducts': totalProducts,
         'averagePrice': averagePrice,
         'minPrice': minPrice == double.infinity ? 0.0 : minPrice,
         'maxPrice': maxPrice,

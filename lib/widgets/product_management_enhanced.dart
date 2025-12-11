@@ -1,13 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:image_cropper/image_cropper.dart';
-import 'dart:io';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:firebase_storage/firebase_storage.dart';
-import 'dart:html' as html;
+// Firebase Storage kaldırıldı - Base64 kullanılıyor
 import '../model/admin_product.dart';
 import '../services/admin_service.dart';
 import 'professional_image_uploader.dart';
+import 'optimized_image.dart';
 
 class ProductManagementEnhanced extends StatefulWidget {
   const ProductManagementEnhanced({super.key});
@@ -128,6 +124,19 @@ class _ProductManagementEnhancedState extends State<ProductManagementEnhanced> {
                   label: Text('Yeni Ürün'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+
+                SizedBox(width: 16),
+
+                // Debug butonu
+                ElevatedButton.icon(
+                  onPressed: () => _debugProductImageUrls(),
+                  icon: Icon(Icons.bug_report),
+                  label: Text('Debug Resimler'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
                     foregroundColor: Colors.white,
                   ),
                 ),
@@ -257,15 +266,11 @@ class _ProductManagementEnhancedState extends State<ProductManagementEnhanced> {
                     borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
                   ),
                   child: product.imageUrl.isNotEmpty
-                      ? ClipRRect(
+                      ? OptimizedImage(
+                          imageUrl: product.imageUrl,
+                          fit: BoxFit.cover,
                           borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
-                          child: Image.network(
-                            product.imageUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Icon(Icons.image, size: 48, color: Colors.grey[400]);
-                            },
-                          ),
+                          errorWidget: Icon(Icons.image, size: 48, color: Colors.grey[400]),
                         )
                       : Icon(Icons.image, size: 48, color: Colors.grey[400]),
                 ),
@@ -564,8 +569,17 @@ class _ProductManagementEnhancedState extends State<ProductManagementEnhanced> {
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
     );
-    
+
     await _addProduct(duplicatedProduct);
+  }
+
+  Future<void> _debugProductImageUrls() async {
+    await _adminService.debugProductImageUrls();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Debug bilgileri konsola yazıldı')),
+      );
+    }
   }
 }
 
@@ -589,8 +603,6 @@ class _ProductDialogState extends State<_ProductDialog> {
   final _priceController = TextEditingController();
   final _stockController = TextEditingController();
   final _categoryController = TextEditingController();
-  final AdminService _adminService = AdminService();
-  
   String? _uploadedImageUrl;
   final GlobalKey<ProfessionalImageUploaderState> _imageUploaderKey = GlobalKey();
 
@@ -634,7 +646,7 @@ class _ProductDialogState extends State<_ProductDialog> {
                 initialImageUrl: _uploadedImageUrl,
                 productId: widget.product?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
                 aspectRatio: 1.0, // Kare format
-                autoUpload: false, // Manuel yükleme
+                autoUpload: true, // Otomatik yükleme - resim seçildiğinde direkt yüklenir
                 onImageUploaded: (imageUrl) {
                   setState(() {
                     _uploadedImageUrl = imageUrl;
@@ -700,44 +712,25 @@ class _ProductDialogState extends State<_ProductDialog> {
     );
   }
 
-  Future<void> _pickImage() async {
-    // Artık ProfessionalImageUploader widget'ı kullanılıyor
-  }
-
-  Future<void> _uploadImage() async {
-    // Artık ProfessionalImageUploader widget'ı kullanılıyor
-  }
-
-  Future<String> _uploadWebImage(html.File file, String productId) async {
-    try {
-      final storage = FirebaseStorage.instance;
-      final String fileName = 'products/$productId/${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final ref = storage.ref().child(fileName);
-      
-      final uploadTask = ref.putBlob(
-        file.slice(0, file.size, file.type),
-        SettableMetadata(contentType: 'image/jpeg'),
-      );
-      
-      final snapshot = await uploadTask;
-      final downloadUrl = await snapshot.ref.getDownloadURL();
-      
-      return downloadUrl;
-    } catch (e) {
-      throw Exception('Web resim yükleme hatası: $e');
-    }
-  }
+  // Bu metodlar artık kullanılmıyor - ProfessionalImageUploader widget'ı kullanılıyor
 
   void _saveProduct() async {
     if (_formKey.currentState!.validate()) {
+      debugPrint('=== ÜRÜN KAYDETME BAŞLADI ===');
+      
       // Fotoğraf yüklenmemişse önce yükle
       String finalImageUrl = _uploadedImageUrl ?? '';
+      debugPrint('Başlangıç imageUrl: ${finalImageUrl.isNotEmpty ? (finalImageUrl.length > 50 ? finalImageUrl.substring(0, 50) + '...' : finalImageUrl) : 'BOŞ'}');
       
       if (_imageUploaderKey.currentState != null) {
         final uploaderState = _imageUploaderKey.currentState!;
+        debugPrint('Uploader state kontrolü:');
+        debugPrint('  - hasUnuploadedImage: ${uploaderState.hasUnuploadedImage}');
+        debugPrint('  - uploadedImageUrl: ${uploaderState.uploadedImageUrl != null ? (uploaderState.uploadedImageUrl!.length > 50 ? uploaderState.uploadedImageUrl!.substring(0, 50) + '...' : uploaderState.uploadedImageUrl) : 'NULL'}');
         
         // Eğer fotoğraf seçilmiş ama yüklenmemişse, önce yükle
         if (uploaderState.hasUnuploadedImage) {
+          debugPrint('📤 Yüklenmemiş resim var, yükleme başlatılıyor...');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -750,13 +743,20 @@ class _ProductDialogState extends State<_ProductDialog> {
           
           try {
             final uploadedUrl = await uploaderState.ensureImageUploaded();
+            debugPrint('ensureImageUploaded sonucu: ${uploadedUrl != null ? (uploadedUrl.length > 50 ? uploadedUrl.substring(0, 50) + '...' : uploadedUrl) : 'NULL'}');
+            
             if (uploadedUrl != null && uploadedUrl.isNotEmpty) {
-              finalImageUrl = uploadedUrl;
+              finalImageUrl = uploadedUrl.trim();
               setState(() {
-                _uploadedImageUrl = uploadedUrl;
+                _uploadedImageUrl = finalImageUrl;
               });
+              debugPrint('✅ Resim URL güncellendi: ${finalImageUrl.length} karakter');
+            } else {
+              debugPrint('⚠️ Yüklenen URL boş veya null');
             }
-          } catch (e) {
+          } catch (e, stackTrace) {
+            debugPrint('❌ Fotoğraf yükleme hatası: $e');
+            debugPrint('Stack trace: $stackTrace');
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -769,9 +769,15 @@ class _ProductDialogState extends State<_ProductDialog> {
             return; // Hata varsa kaydetme
           }
         } else if (uploaderState.uploadedImageUrl != null) {
-          finalImageUrl = uploaderState.uploadedImageUrl!;
+          finalImageUrl = uploaderState.uploadedImageUrl!.trim();
+          debugPrint('✅ Zaten yüklenmiş resim kullanılıyor: ${finalImageUrl.length} karakter');
+        } else {
+          debugPrint('⚠️ Resim yüklenmemiş ve yüklenecek resim de yok');
         }
       }
+      
+      debugPrint('Final imageUrl: ${finalImageUrl.isNotEmpty ? (finalImageUrl.length > 50 ? finalImageUrl.substring(0, 50) + '...' : finalImageUrl) : 'BOŞ'}');
+      debugPrint('Final imageUrl format: ${finalImageUrl.isNotEmpty ? (finalImageUrl.startsWith('data:') ? 'Base64' : finalImageUrl.startsWith('http') ? 'HTTP URL' : 'Diğer') : 'BOŞ'}');
       
       final product = AdminProduct(
         id: widget.product?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
@@ -780,16 +786,20 @@ class _ProductDialogState extends State<_ProductDialog> {
         price: double.parse(_priceController.text),
         stock: int.parse(_stockController.text),
         category: _categoryController.text,
-        imageUrl: finalImageUrl,
+        imageUrl: finalImageUrl.trim(), // Trim ekle
         isActive: widget.product?.isActive ?? true,
         createdAt: widget.product?.createdAt ?? DateTime.now(),
         updatedAt: DateTime.now(),
       );
       
+      debugPrint('Ürün oluşturuldu, Firestore\'a kaydediliyor...');
       widget.onSave(product);
+      
       if (mounted) {
         Navigator.pop(context);
       }
+      
+      debugPrint('=== ÜRÜN KAYDETME TAMAMLANDI ===');
     }
   }
 }

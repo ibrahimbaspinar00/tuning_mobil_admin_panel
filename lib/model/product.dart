@@ -133,11 +133,21 @@ class Product {
       return DateTime.now();
     }
     
+    // imageUrl parse etme - alternatif field isimlerini kontrol et
+    String imageUrl = '';
+    if (map['imageUrl'] != null) {
+      imageUrl = map['imageUrl'].toString().trim();
+    } else if (map['image_url'] != null) {
+      imageUrl = map['image_url'].toString().trim();
+    } else if (map['image'] != null) {
+      imageUrl = map['image'].toString().trim();
+    }
+    
     return Product(
       id: map['id'] ?? '',
       name: map['name'] ?? '',
       price: _safeToDouble(map['price']),
-      imageUrl: map['imageUrl'] ?? '',
+      imageUrl: imageUrl,
       description: map['description'] ?? '',
       category: map['category'] ?? '',
       stock: _safeToInt(map['stock']),

@@ -1,4 +1,5 @@
 // lib/services/gmail_smtp_service.dart
+import 'package:flutter/foundation.dart';
 import 'package:mailer/mailer.dart';
 import 'package:mailer/smtp_server.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -24,7 +25,9 @@ class GmailSMTPService {
         _gmailAppPassword = data?['gmailAppPassword'] as String?;
       }
     } catch (e) {
-      print('❌ Gmail SMTP ayarları yüklenirken hata: $e');
+      if (kDebugMode) {
+        debugPrint('Gmail SMTP ayarları yüklenirken hata: $e');
+      }
     }
   }
   
@@ -46,7 +49,9 @@ class GmailSMTPService {
       
       return true;
     } catch (e) {
-      print('❌ Gmail SMTP ayarları kaydedilirken hata: $e');
+      if (kDebugMode) {
+        debugPrint('Gmail SMTP ayarları kaydedilirken hata: $e');
+      }
       return false;
     }
   }
@@ -83,23 +88,11 @@ class GmailSMTPService {
   // Gmail API ile email gönderimi (ücretsiz)
   static Future<bool> sendPasswordResetCode(String email, String code) async {
     try {
-      print('📧 Gmail SMTP ile email gönderiliyor...');
-      print('📧 Alıcı: $email');
-      print('📧 Kod: $code');
-      
-      // Gmail API kullanarak email gönder
-      final success = await _sendWithGmailAPI(email, code);
-      
-      if (success) {
-        print('✅ Email başarıyla gönderildi!');
-        return true;
-      } else {
-        print('❌ Email gönderilemedi!');
-        return false;
-      }
-      
+      return await _sendWithGmailAPI(email, code);
     } catch (e) {
-      print('❌ Email gönderim hatası: $e');
+      if (kDebugMode) {
+        debugPrint('Email gönderim hatası: $e');
+      }
       return false;
     }
   }
@@ -110,24 +103,15 @@ class GmailSMTPService {
       // Gmail SMTP ayarları kontrol et
       final hasCredentials = await _checkCredentials();
       if (!hasCredentials) {
-        print('❌ Gmail SMTP ayarları yapılmamış!');
-        print('📧 Ayarlar sayfasından Gmail SMTP bilgilerinizi girin');
-        print('📧 Gmail Username: Gmail adresiniz (örn: example@gmail.com)');
-        print('📧 Gmail App Password: Gmail App Password (16 haneli)');
-        print('📧 App Password nasıl alınır:');
-        print('   1. Google hesabınıza giriş yapın');
-        print('   2. Güvenlik > 2 Adımlı Doğrulama > Uygulama şifreleri');
-        print('   3. Yeni uygulama şifresi oluşturun');
+        if (kDebugMode) {
+          debugPrint('Gmail SMTP ayarları yapılmamış');
+        }
         return false;
       }
       
       // Kimlik bilgileri kontrol edildi, null olamazlar
       final username = _gmailUsername!;
       final appPassword = _gmailAppPassword!;
-      
-      print('📧 Gmail SMTP ile gerçek email gönderiliyor...');
-      print('📧 Gönderen: $username');
-      print('📧 Alıcı: $email');
       
       // SMTP sunucusu oluştur
       final smtpServer = gmail(
@@ -158,14 +142,13 @@ Tuning App Admin Paneli
         ''';
       
       // Email gönder
-      final sendReport = await send(message, smtpServer);
-      
-      print('✅ Gmail SMTP ile email gönderildi!');
-      print('📧 Message ID: ${sendReport.toString()}');
+      await send(message, smtpServer);
       return true;
       
     } catch (e) {
-      print('❌ Gmail SMTP hatası: $e');
+      if (kDebugMode) {
+        debugPrint('Gmail SMTP hatası: $e');
+      }
       return false;
     }
   }
@@ -173,14 +156,12 @@ Tuning App Admin Paneli
   // Test email gönder
   static Future<bool> sendTestEmail(String email) async {
     try {
-      print('📧 Test email gönderiliyor...');
-      print('📧 Alıcı: $email');
-      
       // Gmail SMTP ayarları kontrol et
       final hasCredentials = await _checkCredentials();
       if (!hasCredentials) {
-        print('❌ Gmail SMTP ayarları yapılmamış!');
-        print('📧 Ayarlar sayfasından Gmail SMTP bilgilerinizi girin');
+        if (kDebugMode) {
+          debugPrint('Gmail SMTP ayarları yapılmamış');
+        }
         return false;
       }
       
@@ -200,11 +181,12 @@ Tuning App Admin Paneli
         ..text = 'Bu bir test emailidir.';
       
       await send(message, smtpServer);
-      print('✅ Test email gönderildi!');
       return true;
       
     } catch (e) {
-      print('❌ Test email hatası: $e');
+      if (kDebugMode) {
+        debugPrint('Test email hatası: $e');
+      }
       return false;
     }
   }

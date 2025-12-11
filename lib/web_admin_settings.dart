@@ -609,9 +609,6 @@ class _WebAdminSettingsState extends State<WebAdminSettings> {
                       if (value == null || value.isEmpty) {
                         return 'Yeni şifre gerekli';
                       }
-                      if (value.length < 6) {
-                        return 'Şifre en az 6 karakter olmalı';
-                      }
                       return null;
                     },
                   ),

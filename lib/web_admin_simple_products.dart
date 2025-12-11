@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart';
+// Firebase Storage kaldırıldı - Base64 kullanılıyor
 import 'dart:html' as html;
 import 'model/admin_product.dart';
 import 'services/admin_service.dart';
@@ -615,9 +615,9 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
     try {
       await _adminService.deleteProduct(product.id);
       
-      // Audit log
+      // Audit log (hata olsa bile devam et)
       final userId = PermissionService.getCurrentUserId() ?? 'unknown';
-      await AuditLogService.logAction(
+      AuditLogService.logAction(
         userId: userId,
         action: 'delete',
         resource: 'product',
@@ -625,7 +625,11 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
           'productId': product.id,
           'productName': product.name,
         },
-      );
+      ).catchError((e) {
+        if (kDebugMode) {
+          debugPrint('Audit log hatası: $e');
+        }
+      });
       
       _loadProducts();
       if (mounted) {
@@ -772,7 +776,7 @@ class _ProductDialogState extends State<_ProductDialog> {
                         initialImageUrl: _uploadedImageUrl,
                         productId: widget.product?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
                         aspectRatio: 1.0, // Kare format
-                        autoUpload: false, // Manuel yükleme
+                        autoUpload: true, // Otomatik yükleme - resim seçildiğinde direkt yüklenir
                         onImageUploaded: (imageUrl) {
                           setState(() {
                             _uploadedImageUrl = imageUrl;
@@ -890,173 +894,19 @@ class _ProductDialogState extends State<_ProductDialog> {
     );
   }
 
+  // Firebase Storage kaldırıldı - artık ProfessionalImageUploader Base64 kullanıyor
+  // Bu metod artık kullanılmıyor
+  @Deprecated('Firebase Storage kaldırıldı. ProfessionalImageUploader widget\'ını kullanın.')
   Future<String> _uploadWebImage(html.File file, String productId) async {
+    throw UnimplementedError('Firebase Storage kaldırıldı. ProfessionalImageUploader widget\'ını kullanın.');
+    /* Eski kod - artık kullanılmıyor
     try {
       debugPrint('📤 Firebase Storage\'a yükleniyor...');
       debugPrint('Dosya adı: ${file.name}, Boyut: ${file.size} bytes, Tip: ${file.type}');
       
       // Firebase Storage instance'ı kontrol et
       final storage = FirebaseStorage.instance;
-      debugPrint('Storage bucket: ${storage.app.options.storageBucket}');
-      
-      final String fileName = 'product_images/$productId/${DateTime.now().millisecondsSinceEpoch}.jpg';
-      debugPrint('Dosya yolu: $fileName');
-      
-      final ref = storage.ref().child(fileName);
-      debugPrint('Reference oluşturuldu: ${ref.fullPath}');
-      
-      // Blob oluştur
-      debugPrint('Blob oluşturuluyor...');
-      final blob = file.slice(0, file.size, file.type);
-      debugPrint('Blob oluşturuldu, boyut: ${file.size} bytes');
-      
-      // Basit metadata
-      final metadata = SettableMetadata(
-        contentType: 'image/jpeg',
-      );
-      
-      debugPrint('Yükleme başlatılıyor (putBlob ile)...');
-      final uploadTask = ref.putBlob(blob, metadata);
-      
-      // Progress tracking için StreamSubscription
-      StreamSubscription? progressSubscription;
-      
-      try {
-        progressSubscription = uploadTask.snapshotEvents.listen(
-          (snapshot) {
-            if (snapshot.totalBytes > 0) {
-              final progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-              debugPrint('📊 Yükleme ilerlemesi: ${progress.toStringAsFixed(1)}% (${snapshot.bytesTransferred}/${snapshot.totalBytes} bytes)');
-            }
-            if (snapshot.state == TaskState.success) {
-              debugPrint('✅ Upload başarıyla tamamlandı');
-            } else if (snapshot.state == TaskState.error) {
-              debugPrint('❌ Upload state: error');
-            }
-          },
-          onError: (error) {
-            debugPrint('❌ Progress listener hatası: $error');
-          },
-        );
-        
-        debugPrint('Upload task bekleniyor (max 120 saniye)...');
-        final snapshot = await uploadTask.timeout(
-          const Duration(seconds: 120),
-          onTimeout: () {
-            debugPrint('❌ Zaman aşımı! Upload iptal ediliyor...');
-            uploadTask.cancel();
-            throw Exception(
-              'Yükleme zaman aşımına uğradı (120 saniye).\n'
-              'Muhtemel nedenler:\n'
-              '1. Firebase Storage kuralları yazma izni vermiyor\n'
-              '2. İnternet bağlantısı yavaş\n'
-              '3. Firebase Storage bucket yapılandırması eksik\n\n'
-              'Çözüm: Firebase Console > Storage > Rules bölümünden kuralları kontrol edin.'
-            );
-          },
-        );
-        
-        await progressSubscription.cancel();
-        progressSubscription = null;
-        
-        debugPrint('✅ Upload tamamlandı');
-        debugPrint('Transferred: ${snapshot.bytesTransferred} / ${snapshot.totalBytes} bytes');
-        debugPrint('State: ${snapshot.state}');
-        
-        if (snapshot.state != TaskState.success) {
-          throw Exception('Upload başarısız oldu. State: ${snapshot.state}');
-        }
-        
-        debugPrint('Download URL alınıyor...');
-        final downloadUrl = await snapshot.ref.getDownloadURL().timeout(
-          const Duration(seconds: 10),
-          onTimeout: () {
-            throw Exception('Download URL alınamadı (zaman aşımı)');
-          },
-        );
-        debugPrint('✅ Download URL: $downloadUrl');
-        
-        return downloadUrl;
-      } finally {
-        // Progress subscription'ı temizle
-        await progressSubscription?.cancel();
-      }
-    } on FirebaseException catch (e, stackTrace) {
-      debugPrint('❌ Firebase Storage hatası:');
-      debugPrint('   Code: ${e.code}');
-      debugPrint('   Message: ${e.message}');
-      debugPrint('   Plugin: ${e.plugin}');
-      debugPrint('Stack trace: $stackTrace');
-      
-      String errorMessage = 'Firebase Storage hatası: ';
-      switch (e.code) {
-        case 'storage/unauthorized':
-          errorMessage = '❌ Yükleme izni yok!\n\n'
-              'Çözüm:\n'
-              '1. Google Cloud Console\'a gidin: https://console.cloud.google.com/storage?project=tuning-app-789ce\n'
-              '2. Storage API\'yi etkinleştirin\n'
-              '3. Bir bucket oluşturun (varsayılan bucket: tuning-app-789ce.firebasestorage.app)\n'
-              '4. Firebase Console > Storage > Rules bölümünden izinleri kontrol edin';
-          break;
-        case 'storage/canceled':
-          errorMessage = '❌ Yükleme iptal edildi.';
-          break;
-        case 'storage/unknown':
-          errorMessage = '❌ Firebase Storage henüz etkinleştirilmemiş!\n\n'
-              'Çözüm:\n'
-              '1. Google Cloud Console\'a gidin: https://console.cloud.google.com/storage?project=tuning-app-789ce\n'
-              '2. "Cloud Storage API"yi etkinleştirin\n'
-              '3. "Create bucket" butonuna tıklayın\n'
-              '4. Bucket adı: tuning-app-789ce.firebasestorage.app (veya başka bir isim)\n'
-              '5. Location: us-central1 (veya size yakın bir bölge)\n'
-              '6. Storage class: Standard\n'
-              '7. "Create" butonuna tıklayın';
-          break;
-        case 'storage/invalid-argument':
-          errorMessage = '❌ Geçersiz dosya formatı. Lütfen JPEG veya PNG formatında bir resim seçin.';
-          break;
-        case 'storage/quota-exceeded':
-          errorMessage = '❌ Firebase Storage kotası dolmuş. Lütfen Firebase Console\'dan kontrol edin.';
-          break;
-        case 'storage/object-not-found':
-          errorMessage = '❌ Storage bucket bulunamadı!\n\n'
-              'Çözüm: Google Cloud Console\'dan Storage bucket\'ı oluşturun:\n'
-              'https://console.cloud.google.com/storage?project=tuning-app-789ce';
-          break;
-        default:
-          if (e.message?.contains('bucket') == true || e.message?.contains('not found') == true) {
-            errorMessage = '❌ Firebase Storage bucket henüz oluşturulmamış!\n\n'
-                'Adımlar:\n'
-                '1. Google Cloud Console\'a gidin: https://console.cloud.google.com/storage?project=tuning-app-789ce\n'
-                '2. "Cloud Storage API"yi etkinleştirin (sağ üstte "Enable API" butonu)\n'
-                '3. "+ Create bucket" butonuna tıklayın\n'
-                '4. Bucket adı: tuning-app-789ce (veya başka bir isim)\n'
-                '5. "Create" butonuna tıklayın\n'
-                '6. Admin panelini yenileyin ve tekrar deneyin';
-          } else {
-            errorMessage = '❌ Firebase Storage hatası: ${e.code} - ${e.message ?? "Bilinmeyen hata"}\n\n'
-                'Eğer "bucket not found" veya "storage not enabled" hatası alıyorsanız:\n'
-                'Google Cloud Console\'dan Storage API\'yi etkinleştirin ve bucket oluşturun.';
-          }
-      }
-      
-      throw Exception(errorMessage);
-    } catch (e, stackTrace) {
-      debugPrint('❌ Genel resim yükleme hatası: $e');
-      debugPrint('Hata tipi: ${e.runtimeType}');
-      debugPrint('Stack trace: $stackTrace');
-      
-      String errorMessage = 'Resim yüklenirken hata oluştu: ';
-      if (e.toString().contains('timeout') || e.toString().contains('zaman aşımı')) {
-        errorMessage = '❌ Yükleme zaman aşımına uğradı. Lütfen internet bağlantınızı kontrol edin ve tekrar deneyin.';
-      } else if (e.toString().contains('permission') || e.toString().contains('unauthorized')) {
-        errorMessage = '❌ Yükleme izni yok! Firebase Storage kurallarını kontrol edin.';
-      } else {
-        errorMessage = '❌ $e';
-      }
-      
-      throw Exception(errorMessage);
-    }
+      */
   }
 
   void _saveProduct() async {

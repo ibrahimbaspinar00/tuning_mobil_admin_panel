@@ -95,8 +95,20 @@ service cloud.firestore {
     // ==================== PRODUCTS COLLECTION ====================
     // Ürünler koleksiyonu - admin panel için tam erişim
     match /products/{productId} {
-      allow read: if true;
-      allow write: if true;
+      allow read, write, delete: if true;
+      
+      // Alt koleksiyonlar için de tam erişim
+      match /{document=**} {
+        allow read, write, delete: if true;
+      }
+    }
+    
+    // ==================== PRODUCT IMAGES COLLECTION ====================
+    // Ürün resimleri (Base64) - herkese açık okuma, admin yazma
+    match /product_images/{imageId} {
+      allow read: if true; // Herkes okuyabilir (yeni kullanıcılar da görebilir)
+      allow write: if true; // Admin panel yazabilir
+      allow delete: if true;
     }
     
     // ==================== COLLECTIONS COLLECTION ====================

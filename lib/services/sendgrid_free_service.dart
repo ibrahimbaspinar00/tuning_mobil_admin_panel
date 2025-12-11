@@ -1,4 +1,5 @@
 // lib/services/sendgrid_free_service.dart
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -24,7 +25,9 @@ class SendGridFreeService {
         _senderEmail = data?['sendGridSenderEmail'] as String?;
       }
     } catch (e) {
-      print('❌ SendGrid ayarları yüklenirken hata: $e');
+      if (kDebugMode) {
+        debugPrint('SendGrid ayarları yüklenirken hata: $e');
+      }
     }
   }
   
@@ -46,7 +49,9 @@ class SendGridFreeService {
       
       return true;
     } catch (e) {
-      print('❌ SendGrid ayarları kaydedilirken hata: $e');
+      if (kDebugMode) {
+        debugPrint('SendGrid ayarları kaydedilirken hata: $e');
+      }
       return false;
     }
   }
@@ -87,17 +92,12 @@ class SendGridFreeService {
   // Ücretsiz SendGrid ile email gönder
   static Future<bool> sendPasswordResetCode(String email, String code) async {
     try {
-      print('📧 SendGrid ücretsiz plan ile email gönderiliyor...');
-      print('📧 Alıcı: $email');
-      print('📧 Kod: $code');
-      
       // SendGrid ayarları kontrol et
       final hasCredentials = await _checkCredentials();
       if (!hasCredentials) {
-        print('❌ SendGrid ayarları yapılmamış!');
-        print('📧 Ayarlar sayfasından SendGrid API Key ve Sender Email girin');
-        print('📧 SendGrid API Key: SendGrid hesabınızdan alın');
-        print('📧 Sender Email: Doğrulanmış gönderen email adresi');
+        if (kDebugMode) {
+          debugPrint('SendGrid ayarları yapılmamış');
+        }
         return false;
       }
       
@@ -151,15 +151,18 @@ Tuning App Admin Paneli
       );
       
       if (response.statusCode == 202) {
-        print('✅ SendGrid ile email gönderildi!');
         return true;
       } else {
-        print('❌ SendGrid hatası: ${response.statusCode} ${response.body}');
+        if (kDebugMode) {
+          debugPrint('SendGrid hatası: ${response.statusCode} ${response.body}');
+        }
         return false;
       }
       
     } catch (e) {
-      print('❌ SendGrid hatası: $e');
+      if (kDebugMode) {
+        debugPrint('SendGrid hatası: $e');
+      }
       return false;
     }
   }
@@ -167,8 +170,6 @@ Tuning App Admin Paneli
   // Test email gönder - detaylı hata mesajı ile
   static Future<Map<String, dynamic>> sendTestEmail(String email) async {
     try {
-      print('📧 SendGrid test email gönderiliyor...');
-      print('📧 Alıcı: $email');
       
       // Email formatı kontrolü
       if (email.trim().isEmpty || !email.contains('@')) {
@@ -222,7 +223,6 @@ Tuning App Admin Paneli
       );
       
       if (response.statusCode == 202) {
-        print('✅ SendGrid test email gönderildi!');
         return {
           'success': true,
           'message': 'Test email başarıyla gönderildi!',
@@ -244,7 +244,9 @@ Tuning App Admin Paneli
           errorMessage = 'HTTP ${response.statusCode}: ${response.body}';
         }
         
-        print('❌ SendGrid test hatası: ${response.statusCode} ${response.body}');
+        if (kDebugMode) {
+          debugPrint('SendGrid test hatası: ${response.statusCode} ${response.body}');
+        }
         return {
           'success': false,
           'message': 'SendGrid hatası: $errorMessage',
@@ -252,7 +254,9 @@ Tuning App Admin Paneli
       }
       
     } catch (e) {
-      print('❌ SendGrid test hatası: $e');
+      if (kDebugMode) {
+        debugPrint('SendGrid test hatası: $e');
+      }
       return {
         'success': false,
         'message': 'Bağlantı hatası: ${e.toString()}',

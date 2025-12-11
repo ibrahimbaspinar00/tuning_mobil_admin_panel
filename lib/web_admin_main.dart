@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'web_admin_dashboard.dart';
@@ -8,7 +9,6 @@ import 'services/admin_service.dart';
 import 'services/email_service.dart';
 import 'services/app_theme.dart';
 import 'services/audit_log_service.dart';
-import 'services/rate_limit_service.dart';
 
 // Global admin şifre değişkeni
 String adminPassword = 'admin123';
@@ -278,27 +278,6 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
     if (_formKey.currentState!.validate()) {
       if (!mounted) return;
       
-      // Rate limiting kontrolü
-      final identifier = _usernameController.text.trim();
-      final rateLimitOk = await RateLimitService.checkRateLimit(
-        identifier: identifier,
-        maxRequests: 5, // 5 dakikada 5 deneme
-        window: const Duration(minutes: 5),
-      );
-      
-      if (!rateLimitOk) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Çok fazla giriş denemesi. Lütfen 5 dakika sonra tekrar deneyin.'),
-              backgroundColor: Colors.red,
-              duration: Duration(seconds: 5),
-            ),
-          );
-        }
-        return;
-      }
-      
       setState(() {
         _isLoading = true;
       });
@@ -307,12 +286,15 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
         final enteredUsername = _usernameController.text.trim();
         final enteredPassword = _passwordController.text.trim();
         
-        debugPrint('🔐 Giriş denemesi başlatıldı');
-        debugPrint('📝 Girilen kullanıcı adı: $enteredUsername');
+        if (kDebugMode) {
+          debugPrint('Giriş denemesi: username="$enteredUsername", password uzunluğu=${enteredPassword.length}');
+        }
         
         // Önce varsayılan admin kontrolü (hızlı ve güvenilir)
         if (enteredUsername.toLowerCase() == 'admin' && enteredPassword == 'admin123') {
-          debugPrint('✅ Varsayılan admin ile giriş başarılı');
+          if (kDebugMode) {
+            debugPrint('Varsayılan admin ile giriş başarılı');
+          }
           if (mounted) {
             setState(() {
               _isLoading = false;
@@ -324,13 +306,17 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
               userId: 'admin',
             );
             
-            // Audit log
-            await AuditLogService.logAction(
+            // Audit log (hata olsa bile devam et)
+            AuditLogService.logAction(
               userId: 'admin',
               action: 'login',
               resource: 'auth',
               details: {'username': 'admin'},
-            );
+            ).catchError((e) {
+              if (kDebugMode) {
+                debugPrint('Audit log hatası: $e');
+              }
+            });
             
             Navigator.pushReplacement(
               context,
@@ -342,109 +328,112 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
           return;
         }
         
-        // Firebase'den admin ayarlarını yükle (varsa)
+        // Firebase'den admin ayarlarını direkt oku (cache'den değil)
         try {
-          await _loadAdminSettings();
+          final settings = await _adminSettingsService.getAdminSettings()
+              .timeout(const Duration(seconds: 8));
+          
+          if (settings != null) {
+            final expectedUsername = settings.adminUsername.trim().toLowerCase();
+            final expectedPassword = settings.adminPassword.trim();
+            
+            if (kDebugMode) {
+              debugPrint('Firebase ayarları: username="$expectedUsername", password uzunluğu=${expectedPassword.length}');
+            }
+            
+            if (enteredUsername.toLowerCase() == expectedUsername && 
+                enteredPassword == expectedPassword) {
+              if (kDebugMode) {
+                debugPrint('Firebase admin ayarları ile giriş başarılı');
+              }
+              if (mounted) {
+                setState(() {
+                  _isLoading = false;
+                });
+                PermissionService.setCurrentUser(
+                  'admin',
+                  ['all'],
+                  username: settings.adminUsername,
+                  userId: 'admin',
+                );
+                
+                // Audit log (hata olsa bile devam et)
+                AuditLogService.logAction(
+                  userId: 'admin',
+                  action: 'login',
+                  resource: 'auth',
+                  details: {'username': settings.adminUsername},
+                ).catchError((e) {
+                  if (kDebugMode) {
+                    debugPrint('Audit log hatası: $e');
+                  }
+                });
+                
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const WebAdminDashboard(),
+                  ),
+                );
+              }
+              return;
+            }
+          }
         } catch (e) {
-          debugPrint('⚠️ Admin ayarları yüklenemedi: $e');
-          // Devam et, varsayılan değerler kullanılacak
+          if (kDebugMode) {
+            debugPrint('Admin ayarları yüklenemedi: $e');
+          }
+          // Devam et, Firestore kullanıcıları kontrol edilecek
         }
         
         if (!mounted) return;
         
-        // Firebase'den yüklenen admin kontrolü
-        final expectedUsername = adminUsername.trim().toLowerCase();
-        final expectedPassword = adminPassword.trim();
-        
-        if (enteredUsername.toLowerCase() == expectedUsername && enteredPassword == expectedPassword) {
-          debugPrint('✅ Firebase admin ayarları ile giriş başarılı');
-          if (mounted) {
-            setState(() {
-              _isLoading = false;
-            });
-            PermissionService.setCurrentUser(
-              'admin',
-              ['all'],
-              username: adminUsername,
-              userId: 'admin',
-            );
-            
-            // Audit log
-            await AuditLogService.logAction(
-              userId: 'admin',
-              action: 'login',
-              resource: 'auth',
-              details: {'username': adminUsername},
-            );
-            
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const WebAdminDashboard(),
-              ),
-            );
-          }
-          return;
-        }
-        
         // Firestore'dan admin_users koleksiyonundan kontrol et
         List<AdminUser> adminUsers = [];
         try {
-          debugPrint('📡 Firestore\'dan kullanıcılar getiriliyor...');
           final adminService = AdminService();
           adminUsers = await adminService.getUsers()
-              .timeout(const Duration(seconds: 10))
+              .timeout(const Duration(seconds: 15))
               .first;
-          debugPrint('✅ ${adminUsers.length} kullanıcı bulundu');
-        } on TimeoutException catch (e) {
-          debugPrint('❌ Timeout hatası: $e');
-          // Timeout durumunda devam et, kullanıcı bulunamadı mesajı göster
+          
+          if (kDebugMode) {
+            debugPrint('Firestore\'dan ${adminUsers.length} kullanıcı yüklendi');
+          }
+        } on TimeoutException {
+          if (kDebugMode) {
+            debugPrint('Firestore timeout - kullanıcılar yüklenemedi');
+          }
         } catch (e) {
-          debugPrint('❌ Firestore kullanıcı getirme hatası: $e');
-          // Firestore hatası durumunda devam et
+          if (kDebugMode) {
+            debugPrint('Firestore kullanıcı getirme hatası: $e');
+          }
         }
         
-        // Debug: Tüm kullanıcıları yazdır
-        debugPrint('=== ADMIN USERS DEBUG ===');
-        debugPrint('Total users in admin_users: ${adminUsers.length}');
-        for (var user in adminUsers) {
-          debugPrint('User: ${user.username}, Password: ${user.password}, Active: ${user.isActive}, Role: ${user.role}');
-          debugPrint('  Entered: "$enteredUsername" vs Stored: "${user.username}"');
-          debugPrint('  Passwords match: ${user.password == enteredPassword}');
-        }
-        debugPrint('========================');
-        
-        // Admin kullanıcı kontrolü - Daha esnek karşılaştırma
+        // Admin kullanıcı kontrolü
         AdminUser? foundAdminUser;
         for (var user in adminUsers) {
-          // Kullanıcı adı karşılaştırması (trim ve case-insensitive)
-          final storedUsername = user.username.trim();
+          final storedUsername = user.username.trim().toLowerCase();
           final storedPassword = user.password.trim();
+          final enteredUserLower = enteredUsername.toLowerCase();
           
-          if (storedUsername.toLowerCase() == enteredUsername.toLowerCase() &&
+          if (kDebugMode && storedUsername == enteredUserLower) {
+            debugPrint('Kullanıcı bulundu: username="$storedUsername", active=${user.isActive}, role="${user.role}", şifre eşleşiyor=${storedPassword == enteredPassword}');
+          }
+          
+          if (storedUsername == enteredUserLower &&
               storedPassword == enteredPassword &&
               user.isActive &&
               (user.role.toLowerCase() == 'admin' || user.role.toLowerCase() == 'administrator')) {
             foundAdminUser = user;
-            debugPrint('Found admin user: ${user.username}');
+            if (kDebugMode) {
+              debugPrint('Admin kullanıcı ile giriş başarılı: ${user.username}');
+            }
             break;
           }
         }
         
-        final adminUser = foundAdminUser ?? AdminUser(
-          id: '',
-          username: '',
-          email: '',
-          fullName: '',
-          role: '',
-          password: '',
-          createdAt: DateTime.now(),
-          lastLogin: DateTime.now(),
-        );
-        
-        if (adminUser.id.isNotEmpty) {
+        if (foundAdminUser != null) {
           // Admin kullanıcı girişi başarılı
-          debugPrint('✅ Firestore admin kullanıcı ile giriş başarılı: ${adminUser.username}');
           if (mounted) {
             setState(() {
               _isLoading = false;
@@ -452,9 +441,22 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
             PermissionService.setCurrentUser(
               'admin',
               ['all'],
-              username: adminUser.username,
-              userId: adminUser.id,
+              username: foundAdminUser.username,
+              userId: foundAdminUser.id,
             );
+            
+            // Audit log (hata olsa bile devam et)
+            AuditLogService.logAction(
+              userId: foundAdminUser.id,
+              action: 'login',
+              resource: 'auth',
+              details: {'username': foundAdminUser.username},
+            ).catchError((e) {
+              if (kDebugMode) {
+                debugPrint('Audit log hatası: $e');
+              }
+            });
+            
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
@@ -468,16 +470,16 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
         // Normal kullanıcı kontrolü (Admin rolü olmayanlar)
         AdminUser? foundNormalUser;
         for (var user in adminUsers) {
-          final storedUsername = user.username.trim();
+          final storedUsername = user.username.trim().toLowerCase();
           final storedPassword = user.password.trim();
+          final enteredUserLower = enteredUsername.toLowerCase();
           
-          if (storedUsername.toLowerCase() == enteredUsername.toLowerCase() &&
+          if (storedUsername == enteredUserLower &&
               storedPassword == enteredPassword &&
               user.isActive &&
               user.role.toLowerCase() != 'admin' &&
               user.role.toLowerCase() != 'administrator') {
             foundNormalUser = user;
-            debugPrint('✅ Normal kullanıcı bulundu: ${user.username}');
             break;
           }
         }
@@ -494,6 +496,7 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
               username: foundNormalUser.username,
               userId: foundNormalUser.id,
             );
+            
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(
@@ -505,7 +508,6 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
         }
         
         // Kullanıcı bulunamadı
-        debugPrint('❌ Kullanıcı bulunamadı');
         if (mounted) {
           setState(() {
             _isLoading = false;
@@ -528,9 +530,10 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
           );
         }
       } catch (e, stackTrace) {
-        // Hata detaylarını konsola yazdır
-        debugPrint('❌ GİRİŞ HATASI: $e');
+        if (kDebugMode) {
+          debugPrint('Giriş hatası: $e');
         debugPrint('Stack trace: $stackTrace');
+        }
         
         if (mounted) {
           setState(() {
@@ -927,19 +930,8 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
                 onPressed: () {
                   if (codeController.text == _resetCode) {
                     if (newPasswordController.text == confirmPasswordController.text) {
-                      if (newPasswordController.text.length >= 6) {
-                        _resetPassword(newPasswordController.text);
-                        Navigator.pop(context);
-                      } else {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Şifre en az 6 karakter olmalı'),
-                              backgroundColor: Colors.red,
-                            ),
-                          );
-                        }
-                      }
+                      _resetPassword(newPasswordController.text);
+                      Navigator.pop(context);
                     } else {
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(

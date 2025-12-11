@@ -48,133 +48,255 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
       backgroundColor: const Color(0xFFF8FAFC),
       body: Column(
         children: [
-          // Header
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Mobil Kullanıcılar',
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF1E293B),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Mobil uygulama kullanıcılarını yönetin',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    // Statistics
-                    _buildStatCard(
-                      'Toplam Kullanıcı',
-                      '$_totalUsers',
-                      Icons.people,
-                      const Color(0xFF3B82F6),
-                    ),
-                    const SizedBox(width: 16),
-                    _buildStatCard(
-                      'Toplam Bakiye',
-                      '₺${_totalBalance.toStringAsFixed(2)}',
-                      Icons.account_balance_wallet,
-                      const Color(0xFF10B981),
+          // Header - Responsive
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isMobile = constraints.maxWidth < 600;
+              return Container(
+                padding: EdgeInsets.all(isMobile ? 16 : 24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
-                // Search and Filters
-                Row(
+                child: Column(
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: InputDecoration(
-                          hintText: 'Kullanıcı adı, e-posta, telefon ile ara...',
-                          prefixIcon: const Icon(Icons.search),
-                          suffixIcon: _searchQuery.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(Icons.clear),
-                                  onPressed: () {
+                    isMobile
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Mobil Kullanıcılar',
+                                style: TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF1E293B),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Mobil uygulama kullanıcılarını yönetin',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildStatCard(
+                                      'Toplam Kullanıcı',
+                                      '$_totalUsers',
+                                      Icons.people,
+                                      const Color(0xFF3B82F6),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _buildStatCard(
+                                      'Toplam Bakiye',
+                                      '₺${_totalBalance.toStringAsFixed(2)}',
+                                      Icons.account_balance_wallet,
+                                      const Color(0xFF10B981),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Mobil Kullanıcılar',
+                                      style: TextStyle(
+                                        fontSize: 28,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF1E293B),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Mobil uygulama kullanıcılarını yönetin',
+                                      style: TextStyle(
+                                        color: Colors.grey[600],
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Statistics
+                              _buildStatCard(
+                                'Toplam Kullanıcı',
+                                '$_totalUsers',
+                                Icons.people,
+                                const Color(0xFF3B82F6),
+                              ),
+                              const SizedBox(width: 16),
+                              _buildStatCard(
+                                'Toplam Bakiye',
+                                '₺${_totalBalance.toStringAsFixed(2)}',
+                                Icons.account_balance_wallet,
+                                const Color(0xFF10B981),
+                              ),
+                            ],
+                          ),
+                    const SizedBox(height: 24),
+                    // Search and Filters - Responsive
+                    LayoutBuilder(
+                      builder: (context, filterConstraints) {
+                        final isMobile = filterConstraints.maxWidth < 600;
+                        
+                        if (isMobile) {
+                          // Mobil için dikey layout
+                          return Column(
+                            children: [
+                              TextField(
+                                controller: _searchController,
+                                decoration: InputDecoration(
+                                  hintText: 'Kullanıcı ara...',
+                                  prefixIcon: const Icon(Icons.search),
+                                  suffixIcon: _searchQuery.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear),
+                                          onPressed: () {
+                                            setState(() {
+                                              _searchQuery = '';
+                                              _searchController.clear();
+                                            });
+                                          },
+                                        )
+                                      : null,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.grey[50],
+                                ),
+                                onChanged: (value) {
+                                  setState(() {
+                                    _searchQuery = value;
+                                  });
+                                },
+                              ),
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.grey[300]!),
+                                ),
+                                child: DropdownButton<String>(
+                                  value: _selectedStatus,
+                                  underline: const SizedBox(),
+                                  isExpanded: true,
+                                  items: const [
+                                    DropdownMenuItem(value: 'Tümü', child: Text('Tüm Durumlar')),
+                                    DropdownMenuItem(value: 'Aktif', child: Text('Aktif')),
+                                    DropdownMenuItem(value: 'Pasif', child: Text('Pasif')),
+                                    DropdownMenuItem(value: 'Dondurulmuş', child: Text('Dondurulmuş')),
+                                  ],
+                                  onChanged: (value) {
                                     setState(() {
-                                      _searchQuery = '';
-                                      _searchController.clear();
+                                      _selectedStatus = value!;
                                     });
                                   },
-                                )
-                              : null,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          filled: true,
-                          fillColor: Colors.grey[50],
-                        ),
-                        onChanged: (value) {
-                          setState(() {
-                            _searchQuery = value;
-                          });
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey[300]!),
-                      ),
-                      child: DropdownButton<String>(
-                        value: _selectedStatus,
-                        underline: const SizedBox(),
-                        items: const [
-                          DropdownMenuItem(value: 'Tümü', child: Text('Tüm Durumlar')),
-                          DropdownMenuItem(value: 'Aktif', child: Text('Aktif')),
-                          DropdownMenuItem(value: 'Pasif', child: Text('Pasif')),
-                          DropdownMenuItem(value: 'Dondurulmuş', child: Text('Dondurulmuş')),
-                        ],
-                        onChanged: (value) {
-                          setState(() {
-                            _selectedStatus = value!;
-                          });
-                        },
-                      ),
+                                ),
+                              ),
+                            ],
+                          );
+                        } else {
+                          // Desktop için yatay layout
+                          return Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _searchController,
+                                  decoration: InputDecoration(
+                                    hintText: 'Kullanıcı adı, e-posta, telefon ile ara...',
+                                    prefixIcon: const Icon(Icons.search),
+                                    suffixIcon: _searchQuery.isNotEmpty
+                                        ? IconButton(
+                                            icon: const Icon(Icons.clear),
+                                            onPressed: () {
+                                              setState(() {
+                                                _searchQuery = '';
+                                                _searchController.clear();
+                                              });
+                                            },
+                                          )
+                                        : null,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    filled: true,
+                                    fillColor: Colors.grey[50],
+                                  ),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _searchQuery = value;
+                                    });
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.grey[300]!),
+                                ),
+                                child: DropdownButton<String>(
+                                  value: _selectedStatus,
+                                  underline: const SizedBox(),
+                                  items: const [
+                                    DropdownMenuItem(value: 'Tümü', child: Text('Tüm Durumlar')),
+                                    DropdownMenuItem(value: 'Aktif', child: Text('Aktif')),
+                                    DropdownMenuItem(value: 'Pasif', child: Text('Pasif')),
+                                    DropdownMenuItem(value: 'Dondurulmuş', child: Text('Dondurulmuş')),
+                                  ],
+                                  onChanged: (value) {
+                                    setState(() {
+                                      _selectedStatus = value!;
+                                    });
+                                  },
+                                ),
+                              ),
+                            ],
+                          );
+                        }
+                      },
                     ),
                   ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
 
-          // User List
+          // User List - Responsive padding
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: _searchQuery.isEmpty
-                  ? _buildUserStream()
-                  : _buildSearchResults(),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isMobile = constraints.maxWidth < 600;
+                return Padding(
+                  padding: EdgeInsets.all(isMobile ? 12 : 24),
+                  child: _searchQuery.isEmpty
+                      ? _buildUserStream()
+                      : _buildSearchResults(),
+                );
+              },
             ),
           ),
         ],
@@ -183,39 +305,56 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
   }
 
   Widget _buildStatCard(String label, String value, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 28),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Builder(
+      builder: (context) {
+        final screenWidth = MediaQuery.of(context).size.width;
+        final isMobile = screenWidth < 600;
+        return Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: isMobile ? 12 : 20,
+            vertical: isMobile ? 12 : 16,
+          ),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[700],
-                ),
-              ),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: color,
+              Icon(icon, color: color, size: isMobile ? 20 : 28),
+              SizedBox(width: isMobile ? 8 : 12),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: isMobile ? 10 : 12,
+                        color: Colors.grey[700],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      value,
+                      style: TextStyle(
+                        fontSize: isMobile ? 14 : 18,
+                        fontWeight: FontWeight.bold,
+                        color: color,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -452,16 +591,47 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
   }
 
   Widget _buildUserGrid(List<MobileUser> users) {
-    return GridView.builder(
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 5,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 1.1,
-      ),
-      itemCount: users.length,
-      itemBuilder: (context, index) {
-        return _buildUserCard(users[index]);
+    // Responsive grid: mobil için 1-2, tablet için 3, desktop için 4-5 sütun
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final screenWidth = constraints.maxWidth;
+        int crossAxisCount;
+        double childAspectRatio;
+        
+        if (screenWidth < 600) {
+          // Mobil
+          crossAxisCount = 1;
+          childAspectRatio = 2.8;
+        } else if (screenWidth < 900) {
+          // Küçük tablet
+          crossAxisCount = 2;
+          childAspectRatio = 1.8;
+        } else if (screenWidth < 1200) {
+          // Tablet
+          crossAxisCount = 3;
+          childAspectRatio = 1.5;
+        } else if (screenWidth < 1600) {
+          // Küçük desktop
+          crossAxisCount = 4;
+          childAspectRatio = 1.2;
+        } else {
+          // Büyük desktop
+          crossAxisCount = 5;
+          childAspectRatio = 1.0;
+        }
+
+        return GridView.builder(
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: crossAxisCount,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            childAspectRatio: childAspectRatio,
+          ),
+          itemCount: users.length,
+          itemBuilder: (context, index) {
+            return _buildUserCard(users[index]);
+          },
+        );
       },
     );
   }
@@ -482,17 +652,18 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
       ),
       child: InkWell(
         onTap: () => _showUserDetails(user),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.start,
             children: [
               Row(
                 children: [
                   CircleAvatar(
-                    radius: 14,
+                    radius: 24,
                     backgroundColor: const Color(0xFF6366F1),
                     backgroundImage: user.avatarUrl != null && user.avatarUrl!.isNotEmpty
                         ? NetworkImage(user.avatarUrl!)
@@ -507,14 +678,14 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
-                              fontSize: 12,
+                              fontSize: 20,
                             ),
                           )
                         : null,
                   ),
                   const Spacer(),
                   PopupMenuButton<String>(
-                    icon: Icon(Icons.more_vert, color: Colors.grey[600], size: 14),
+                    icon: Icon(Icons.more_vert, color: Colors.grey[600], size: 20),
                     onSelected: (value) => _handleMenuAction(value, user),
                     itemBuilder: (context) => [
                       const PopupMenuItem(
@@ -579,34 +750,38 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
-              Text(
-                user.fullName ?? user.username ?? user.email ?? 'İsimsiz',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1E293B),
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 2),
-              if (user.email != null)
-                Text(
-                  user.email!,
-                  style: TextStyle(
-                    fontSize: 9,
-                    color: Colors.grey[600],
+              const SizedBox(height: 12),
+              Flexible(
+                child: Text(
+                  user.fullName ?? user.username ?? user.email ?? 'İsimsiz',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1E293B),
                   ),
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-              const SizedBox(height: 6),
+              ),
+              const SizedBox(height: 4),
+              if (user.email != null)
+                Flexible(
+                  child: Text(
+                    user.email!,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey[600],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.all(6),
+                padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
                   color: const Color(0xFF10B981).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(5),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -614,66 +789,71 @@ class _WebAdminMobileUsersState extends State<WebAdminMobileUsers> {
                     Text(
                       'Bakiye',
                       style: TextStyle(
-                        fontSize: 9,
-                        color: Colors.grey[600],
+                        fontSize: 12,
+                        color: Colors.grey[700],
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                    Text(
-                      '₺${user.balance.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF10B981),
+                    Flexible(
+                      child: Text(
+                        '₺${user.balance.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF10B981),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 8),
               if (user.isFrozen)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Text(
                     'DONDURULDU',
                     style: TextStyle(
                       color: Colors.red,
-                      fontSize: 7,
+                      fontSize: 12,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                 )
               else if (!user.isActive)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.grey.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Text(
                     'PASIF',
                     style: TextStyle(
                       color: Colors.grey,
-                      fontSize: 7,
+                      fontSize: 12,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                 )
               else
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.green.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Text(
                     'AKTIF',
                     style: TextStyle(
                       color: Colors.green,
-                      fontSize: 7,
+                      fontSize: 12,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
