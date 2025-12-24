@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'services/admin_service.dart';
-import 'model/admin_product.dart';
 import 'model/order.dart' as OrderModel;
 import 'web_admin_simple_products.dart';
 import 'web_admin_stock_management.dart';
@@ -17,6 +16,14 @@ import 'services/app_theme.dart';
 import 'admin_review_management.dart';
 import 'web_admin_profile.dart';
 import 'web_admin_mobile_users.dart';
+import 'web_admin_registered_users.dart';
+import 'web_admin_category_management.dart';
+import 'web_admin_top_customers.dart';
+import 'utils/responsive_helper.dart';
+import 'widgets/dashboard_charts.dart';
+import 'widgets/global_search.dart';
+import 'web_admin_campaigns.dart';
+import 'web_admin_advanced_reports.dart';
 
 class WebAdminDashboard extends StatefulWidget {
   const WebAdminDashboard({super.key});
@@ -60,9 +67,11 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
     return Scaffold(
       body: LayoutBuilder(
         builder: (context, constraints) {
-          final isMobile = constraints.maxWidth < 768;
-          final isTablet = constraints.maxWidth >= 768 && constraints.maxWidth < 1024;
-          final sidebarWidth = _sidebarCollapsed ? 80.0 : (isTablet ? 240.0 : 260.0);
+          final isMobile = ResponsiveHelper.isMobile(context);
+          final sidebarWidth = ResponsiveHelper.responsiveSidebarWidth(
+            context,
+            collapsed: _sidebarCollapsed,
+          );
           
           return Row(
             children: [
@@ -72,12 +81,20 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
                   duration: const Duration(milliseconds: 300),
                   width: sidebarWidth,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF1E293B), // Modern dark slate
+                    gradient: const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Color(0xFF1E293B),
+                        Color(0xFF0F172A),
+                      ],
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 10,
-                        offset: const Offset(2, 0),
+                        color: Colors.black.withValues(alpha: 0.15),
+                        blurRadius: 20,
+                        offset: const Offset(4, 0),
+                        spreadRadius: 0,
                       ),
                     ],
                   ),
@@ -111,21 +128,38 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
   Widget _buildSidebarHeader() {
     return Container(
       padding: EdgeInsets.all(_sidebarCollapsed ? 16 : 24),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.white.withValues(alpha: 0.1),
+            width: 1,
+          ),
+        ),
+      ),
       child: Row(
         children: [
           if (!_sidebarCollapsed) ...[
             Container(
-              width: 48,
-              height: 48,
+              width: 52,
+              height: 52,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.4),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              child: const Icon(Icons.dashboard, color: Colors.white, size: 24),
+              child: const Icon(Icons.dashboard_rounded, color: Colors.white, size: 26),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -134,15 +168,18 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
                     'Admin Panel',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 18,
+                      fontSize: 20,
                       fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
                     ),
                   ),
+                  const SizedBox(height: 4),
                   Text(
                     PermissionService.getCurrentUserName() ?? 'Admin',
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7),
-                      fontSize: 12,
+                      color: Colors.white.withValues(alpha: 0.75),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
@@ -150,24 +187,40 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
             ),
           ] else
             Container(
-              width: 48,
-              height: 48,
+              width: 52,
+              height: 52,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF6366F1).withValues(alpha: 0.4),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              child: const Icon(Icons.dashboard, color: Colors.white, size: 24),
+              child: const Icon(Icons.dashboard_rounded, color: Colors.white, size: 26),
             ),
           if (!_sidebarCollapsed)
-            IconButton(
-              icon: Icon(
-                Icons.chevron_left,
-                color: Colors.white.withValues(alpha: 0.7),
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => setState(() => _sidebarCollapsed = true),
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(
+                    Icons.chevron_left_rounded,
+                    color: Colors.white.withValues(alpha: 0.8),
+                    size: 20,
+                  ),
+                ),
               ),
-              onPressed: () => setState(() => _sidebarCollapsed = true),
-              tooltip: 'Daralt',
             ),
         ],
       ),
@@ -211,7 +264,10 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
   List<Map<String, dynamic>> _getMenuItems() {
     return [
       {'isDivider': false, 'index': 0, 'icon': Icons.dashboard_rounded, 'title': 'Ana Sayfa', 'color': null},
+      {'isDivider': false, 'index': 14, 'icon': Icons.search_rounded, 'title': 'Arama', 'color': null},
       {'isDivider': true, 'title': 'ÜRÜN YÖNETİMİ'},
+      if (PermissionService.canViewProducts())
+        {'isDivider': false, 'index': 12, 'icon': Icons.category_rounded, 'title': 'Kategoriler', 'color': null},
       if (PermissionService.canViewProducts())
         {'isDivider': false, 'index': 1, 'icon': Icons.inventory_2_rounded, 'title': 'Ürünler', 'color': null},
       if (PermissionService.canViewStock())
@@ -220,54 +276,99 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
         {'isDivider': false, 'index': 3, 'icon': Icons.price_change_rounded, 'title': 'Fiyatlar', 'color': null},
       {'isDivider': true, 'title': 'SİPARİŞLER'},
       {'isDivider': false, 'index': 4, 'icon': Icons.shopping_bag_rounded, 'title': 'Siparişler', 'color': null},
+      {'isDivider': false, 'index': 13, 'icon': Icons.star_rounded, 'title': 'En Çok Alışveriş Yapanlar', 'color': null},
       {'isDivider': true, 'title': 'YÖNETİM'},
+      {'isDivider': false, 'index': 11, 'icon': Icons.manage_accounts_rounded, 'title': 'Kullanıcı Yönetim Paneli', 'color': null},
       if (PermissionService.canViewUsers())
         {'isDivider': false, 'index': 5, 'icon': Icons.people_rounded, 'title': 'Admin Kullanıcılar', 'color': null},
-      {'isDivider': false, 'index': 10, 'icon': Icons.smartphone_rounded, 'title': 'Mobil Kullanıcılar', 'color': null},
       {'isDivider': false, 'index': 7, 'icon': Icons.notifications_rounded, 'title': 'Bildirimler', 'color': null},
       {'isDivider': false, 'index': 8, 'icon': Icons.star_rounded, 'title': 'Yorumlar', 'color': null},
       if (PermissionService.canViewReports())
         {'isDivider': false, 'index': 6, 'icon': Icons.analytics_rounded, 'title': 'Raporlar', 'color': null},
+      if (PermissionService.canViewReports())
+        {'isDivider': false, 'index': 16, 'icon': Icons.bar_chart_rounded, 'title': 'Gelişmiş Raporlar', 'color': null},
       if (PermissionService.canAccessSettings())
         {'isDivider': false, 'index': 9, 'icon': Icons.settings_rounded, 'title': 'Ayarlar', 'color': null},
+      {'isDivider': true, 'title': 'KAMPANYALAR'},
+      {'isDivider': false, 'index': 15, 'icon': Icons.campaign_rounded, 'title': 'Kampanyalar', 'color': null},{'isDivider': false, 'index': 9, 'icon': Icons.settings_rounded, 'title': 'Ayarlar', 'color': null},
     ];
   }
 
   Widget _buildMenuTile(int index, IconData icon, String title, Color? color) {
     final isSelected = _selectedIndex == index;
-    final tileColor = isSelected ? const Color(0xFF6366F1) : Colors.transparent;
     
-    return Container(
-      margin: const EdgeInsets.only(bottom: 4),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      margin: const EdgeInsets.only(bottom: 6),
       decoration: BoxDecoration(
-        color: tileColor,
-        borderRadius: BorderRadius.circular(12),
+        gradient: isSelected
+            ? const LinearGradient(
+                colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              )
+            : null,
+        color: isSelected ? null : Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: isSelected
+            ? [
+                BoxShadow(
+                  color: const Color(0xFF6366F1).withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
       ),
-      child: ListTile(
-        contentPadding: EdgeInsets.symmetric(
-          horizontal: _sidebarCollapsed ? 12 : 16,
-          vertical: 4,
-        ),
-        leading: Icon(
-          icon,
-          color: isSelected 
-            ? Colors.white 
-            : Colors.white.withValues(alpha: 0.7),
-          size: 22,
-        ),
-        title: _sidebarCollapsed 
-          ? null
-          : Text(
-              title,
-              style: TextStyle(
-                color: isSelected 
-                  ? Colors.white 
-                  : Colors.white.withValues(alpha: 0.9),
-                fontSize: 14,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-              ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => setState(() => _selectedIndex = index),
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: _sidebarCollapsed ? 12 : 18,
+              vertical: 12,
             ),
-        onTap: () => setState(() => _selectedIndex = index),
+            child: Row(
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? Colors.white.withValues(alpha: 0.2)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: isSelected
+                        ? Colors.white
+                        : Colors.white.withValues(alpha: 0.8),
+                    size: 22,
+                  ),
+                ),
+                if (!_sidebarCollapsed) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        color: isSelected
+                            ? Colors.white
+                            : Colors.white.withValues(alpha: 0.9),
+                        fontSize: 14,
+                        fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -283,19 +384,41 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
           ),
         ),
       ),
-      child: ListTile(
-        contentPadding: EdgeInsets.symmetric(
-          horizontal: _sidebarCollapsed ? 12 : 16,
-          vertical: 4,
-        ),
-        leading: const Icon(Icons.logout_rounded, color: Colors.redAccent, size: 22),
-        title: _sidebarCollapsed 
-          ? null
-          : const Text(
-              'Çıkış',
-              style: TextStyle(color: Colors.redAccent, fontSize: 14),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _showLogoutDialog,
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: _sidebarCollapsed ? 12 : 18,
+              vertical: 12,
             ),
-        onTap: _showLogoutDialog,
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.logout_rounded, color: Colors.redAccent, size: 22),
+                ),
+                if (!_sidebarCollapsed) ...[
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Çıkış Yap',
+                    style: TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -306,37 +429,92 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
       elevation: 0,
       backgroundColor: Colors.white,
       foregroundColor: const Color(0xFF1E293B),
-      title: Row(
-        children: [
-          if (_sidebarCollapsed)
-            IconButton(
-              icon: const Icon(Icons.menu),
-              onPressed: () => setState(() => _sidebarCollapsed = false),
+      surfaceTintColor: Colors.transparent,
+      title: _getPageTitle().isEmpty
+          ? null
+          : Row(
+              children: [
+                if (_sidebarCollapsed)
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => setState(() => _sidebarCollapsed = false),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        child: const Icon(Icons.menu_rounded, size: 24),
+                      ),
+                    ),
+                  ),
+                if (_sidebarCollapsed) const SizedBox(width: 8),
+                Text(
+                  _getPageTitle(),
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1E293B),
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
             ),
-          const SizedBox(width: 8),
-          Text(
-            _getPageTitle(),
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF1E293B),
+      actions: [
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => setState(() => _selectedIndex = 7),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              child: Stack(
+                children: [
+                  const Icon(Icons.notifications_outlined, size: 24),
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ],
-      ),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.notifications_outlined),
-          onPressed: () => setState(() => _selectedIndex = 7),
-          tooltip: 'Bildirimler',
         ),
         const SizedBox(width: 8),
         PopupMenuButton<String>(
-          icon: CircleAvatar(
-            backgroundColor: const Color(0xFF6366F1),
-            child: Text(
-              (PermissionService.getCurrentUserName() ?? 'A')[0].toUpperCase(),
-              style: const TextStyle(color: Colors.white),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          icon: Container(
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+              ),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF6366F1).withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: CircleAvatar(
+              backgroundColor: Colors.transparent,
+              radius: 20,
+              child: Text(
+                (PermissionService.getCurrentUserName() ?? 'A')[0].toUpperCase(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ),
           itemBuilder: (context) => [
@@ -344,9 +522,9 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
               value: 'profile',
               child: Row(
                 children: [
-                  Icon(Icons.person, size: 20),
-                  SizedBox(width: 8),
-                  Text('Profil'),
+                  Icon(Icons.person_rounded, size: 20, color: Color(0xFF6366F1)),
+                  SizedBox(width: 12),
+                  Text('Profil', style: TextStyle(fontWeight: FontWeight.w500)),
                 ],
               ),
             ),
@@ -354,9 +532,9 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
               value: 'settings',
               child: Row(
                 children: [
-                  Icon(Icons.settings, size: 20),
-                  SizedBox(width: 8),
-                  Text('Ayarlar'),
+                  Icon(Icons.settings_rounded, size: 20, color: Color(0xFF6366F1)),
+                  SizedBox(width: 12),
+                  Text('Ayarlar', style: TextStyle(fontWeight: FontWeight.w500)),
                 ],
               ),
             ),
@@ -365,9 +543,9 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
               value: 'logout',
               child: Row(
                 children: [
-                  Icon(Icons.logout, color: Colors.red, size: 20),
-                  SizedBox(width: 8),
-                  Text('Çıkış Yap', style: TextStyle(color: Colors.red)),
+                  Icon(Icons.logout_rounded, color: Colors.red, size: 20),
+                  SizedBox(width: 12),
+                  Text('Çıkış Yap', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
                 ],
               ),
             ),
@@ -420,8 +598,17 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
       'Yorum Yönetimi',
       'Ayarlar',
       'Mobil Kullanıcılar',
+      'Kullanıcı Yönetim Paneli',
+      'Kategori Yönetimi',
+      'En Çok Alışveriş Yapanlar',
+      '', // Index 14: Arama (başlık gösterilmeyecek)
+      'Kampanyalar',
+      'Gelişmiş Raporlar',
     ];
-    return titles[_selectedIndex];
+    if (_selectedIndex < titles.length) {
+      return titles[_selectedIndex];
+    }
+    return 'Ana Sayfa';
   }
 
   void _showProfilePage() {
@@ -642,6 +829,20 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
             : _buildAccessDeniedPage('Ayarlar');
       case 10:
         return const WebAdminMobileUsers();
+      case 11:
+        return const WebAdminRegisteredUsers();
+      case 12:
+        return const WebAdminCategoryManagement();
+      case 13:
+        return const WebAdminTopCustomers();
+      case 14:
+        return const GlobalSearch();
+      case 15:
+        return const WebAdminCampaigns();
+      case 16:
+        return PermissionService.canViewReports() 
+            ? const WebAdminAdvancedReports() 
+            : _buildAccessDeniedPage('Gelişmiş Raporlar');
       default:
         return const WebDashboardHome();
     }
@@ -693,6 +894,10 @@ class WebDashboardHome extends StatelessWidget {
             _buildStatisticsGrid(),
             const SizedBox(height: 32),
             
+            // Charts and Analytics
+            const DashboardCharts(),
+            const SizedBox(height: 32),
+            
             // Quick Actions
             _buildQuickActions(context),
           ],
@@ -704,47 +909,77 @@ class WebDashboardHome extends StatelessWidget {
   Widget _buildWelcomeCard() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(36),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+          colors: [Color(0xFF6366F1), Color(0xFF8B5CF6), Color(0xFFEC4899)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF6366F1).withValues(alpha: 0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+            color: const Color(0xFF6366F1).withValues(alpha: 0.4),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+            spreadRadius: 0,
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          const Text(
-            'Hoş Geldiniz! 👋',
-            style: TextStyle(
-              fontSize: 32,
-              fontWeight: FontWeight.bold,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Hoş Geldiniz! 👋',
+                  style: TextStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  '${PermissionService.getCurrentUserName() ?? 'Admin'} olarak giriş yaptınız.',
+                  style: TextStyle(
+                    fontSize: 18,
+                    color: Colors.white.withValues(alpha: 0.95),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'Bugün ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: Colors.white.withValues(alpha: 0.9),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.dashboard_rounded,
+              size: 60,
               color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            '${PermissionService.getCurrentUserName() ?? 'Admin'} olarak giriş yaptınız.',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.white.withValues(alpha: 0.9),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Bugün ${DateTime.now().day}/${DateTime.now().month}/${DateTime.now().year}',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.white.withValues(alpha: 0.7),
             ),
           ),
         ],
@@ -823,19 +1058,21 @@ class WebDashboardHome extends StatelessWidget {
         
         return LayoutBuilder(
           builder: (context, constraints) {
-            final crossAxisCount = constraints.maxWidth > 1200 
-              ? 3 
-              : constraints.maxWidth > 768 
-                ? 2 
-                : 1;
+            final crossAxisCount = ResponsiveHelper.responsiveColumns(
+              context,
+              mobile: 1,
+              tablet: 2,
+              laptop: 3,
+              desktop: 3,
+            );
             
             return GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: crossAxisCount,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
+                crossAxisSpacing: ResponsiveHelper.responsiveGridSpacing(context),
+                mainAxisSpacing: ResponsiveHelper.responsiveGridSpacing(context),
                 childAspectRatio: 1.5,
               ),
               itemCount: cards.length,
@@ -854,9 +1091,10 @@ class WebDashboardHome extends StatelessWidget {
         const Text(
           'Hızlı İşlemler',
           style: TextStyle(
-            fontSize: 20,
+            fontSize: 24,
             fontWeight: FontWeight.bold,
             color: Color(0xFF1E293B),
+            letterSpacing: 0.3,
           ),
         ),
         const SizedBox(height: 16),
@@ -919,9 +1157,9 @@ class WebDashboardHome extends StatelessWidget {
       final lastMonthStart = DateTime(now.year, now.month - 1, 1);
       final lastMonthEnd = DateTime(now.year, now.month, 0, 23, 59, 59);
       
-      // Tüm ürünleri al
-      final products = await adminService.getProducts().first;
-      final validProducts = products.cast<AdminProduct>().toList();
+      // Tüm ürünleri al - Server-side fetch (cache bypass)
+      final products = await adminService.getProductsFromServer();
+      final validProducts = products;
       
       // Mevcut dönem ürün sayısı
       int totalProducts = validProducts.length;
@@ -1010,7 +1248,7 @@ class WebDashboardHome extends StatelessWidget {
   }
 }
 
-class _StatCard extends StatelessWidget {
+class _StatCard extends StatefulWidget {
   final String title;
   final String value;
   final IconData icon;
@@ -1026,92 +1264,180 @@ class _StatCard extends StatelessWidget {
   });
 
   @override
+  State<_StatCard> createState() => _StatCardState();
+}
+
+class _StatCardState extends State<_StatCard> with SingleTickerProviderStateMixin {
+  bool _isHovered = false;
+  late AnimationController _animationController;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 1.02).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
+    return MouseRegion(
+      onEnter: (_) {
+        setState(() => _isHovered = true);
+        _animationController.forward();
+      },
+      onExit: (_) {
+        setState(() => _isHovered = false);
+        _animationController.reverse();
+      },
+      child: AnimatedBuilder(
+        animation: _scaleAnimation,
+        builder: (context, child) {
+          return Transform.scale(
+            scale: _scaleAnimation.value,
+            child: Container(
+              padding: const EdgeInsets.all(28),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: widget.color.withValues(alpha: _isHovered ? 0.3 : 0.1),
+                  width: _isHovered ? 1.5 : 1,
                 ),
-                child: Icon(icon, color: color, size: 24),
+                boxShadow: [
+                  BoxShadow(
+                    color: _isHovered
+                        ? widget.color.withValues(alpha: 0.15)
+                        : Colors.black.withValues(alpha: 0.06),
+                    blurRadius: _isHovered ? 16 : 12,
+                    offset: Offset(0, _isHovered ? 6 : 4),
+                    spreadRadius: _isHovered ? 0 : 0,
+                  ),
+                ],
               ),
-              if (trend != null)
-                Builder(
-                  builder: (context) {
-                    final trendValue = trend!;
-                    return Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: (trendValue.contains('+') || trendValue == '✓ Yeterli')
-                          ? const Color(0xFF10B981).withValues(alpha: 0.1)
-                          : (trendValue.contains('-'))
-                            ? const Color(0xFFEF4444).withValues(alpha: 0.1)
-                            : const Color(0xFFF59E0B).withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        trendValue,
-                        style: TextStyle(
-                          color: (trendValue.contains('+') || trendValue == '✓ Yeterli')
-                            ? const Color(0xFF10B981)
-                            : (trendValue.contains('-'))
-                              ? const Color(0xFFEF4444)
-                              : const Color(0xFFF59E0B),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              widget.color.withValues(alpha: 0.15),
+                              widget.color.withValues(alpha: 0.08),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: widget.color.withValues(alpha: 0.2),
+                              blurRadius: 8,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
+                        child: Icon(widget.icon, color: widget.color, size: 26),
                       ),
-                    );
-                  },
-                ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: color,
+                      if (widget.trend != null)
+                        Builder(
+                          builder: (context) {
+                            final trendValue = widget.trend!;
+                            final isPositive = trendValue.contains('+') || trendValue == '✓ Yeterli';
+                            final isNegative = trendValue.contains('-');
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isPositive
+                                    ? const Color(0xFF10B981).withValues(alpha: 0.12)
+                                    : isNegative
+                                        ? const Color(0xFFEF4444).withValues(alpha: 0.12)
+                                        : const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    isPositive
+                                        ? Icons.trending_up_rounded
+                                        : isNegative
+                                            ? Icons.trending_down_rounded
+                                            : Icons.trending_flat_rounded,
+                                    size: 14,
+                                    color: isPositive
+                                        ? const Color(0xFF10B981)
+                                        : isNegative
+                                            ? const Color(0xFFEF4444)
+                                            : const Color(0xFFF59E0B),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    trendValue,
+                                    style: TextStyle(
+                                      color: isPositive
+                                          ? const Color(0xFF10B981)
+                                          : isNegative
+                                              ? const Color(0xFFEF4444)
+                                              : const Color(0xFFF59E0B),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    widget.value,
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: widget.color,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    widget.title,
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: const Color(0xFF64748B),
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 14,
-              color: Color(0xFF64748B),
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 }
 
-class _QuickActionButton extends StatelessWidget {
+class _QuickActionButton extends StatefulWidget {
   final IconData icon;
   final String label;
   final Color color;
@@ -1125,35 +1451,110 @@ class _QuickActionButton extends StatelessWidget {
   });
 
   @override
+  State<_QuickActionButton> createState() => _QuickActionButtonState();
+}
+
+class _QuickActionButtonState extends State<_QuickActionButton> with SingleTickerProviderStateMixin {
+  bool _isHovered = false;
+  late AnimationController _animationController;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
+    );
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.95).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withValues(alpha: 0.3)),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
+    return MouseRegion(
+      onEnter: (_) {
+        setState(() => _isHovered = true);
+        _animationController.forward();
+      },
+      onExit: (_) {
+        setState(() => _isHovered = false);
+        _animationController.reverse();
+      },
+      child: AnimatedBuilder(
+        animation: _scaleAnimation,
+        builder: (context, child) {
+          return Transform.scale(
+            scale: _scaleAnimation.value,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: widget.onTap,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+                  decoration: BoxDecoration(
+                    gradient: _isHovered
+                        ? LinearGradient(
+                            colors: [
+                              widget.color.withValues(alpha: 0.15),
+                              widget.color.withValues(alpha: 0.08),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          )
+                        : null,
+                    color: _isHovered ? null : widget.color.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: widget.color.withValues(alpha: _isHovered ? 0.4 : 0.25),
+                      width: _isHovered ? 1.5 : 1,
+                    ),
+                    boxShadow: _isHovered
+                        ? [
+                            BoxShadow(
+                              color: widget.color.withValues(alpha: 0.2),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ]
+                        : [],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: widget.color.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(widget.icon, color: widget.color, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        widget.label,
+                        style: TextStyle(
+                          color: widget.color,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }

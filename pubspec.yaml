@@ -13,11 +13,11 @@ dependencies:
 
   cupertino_icons: ^1.0.8
   
-  # Firebase dependencies - uyumlu sürümler
-  firebase_core: ^3.8.0
+  # Firebase dependencies
+  firebase_core: ^3.6.0
   firebase_auth: ^5.3.1
   cloud_firestore: ^5.4.4
-  # firebase_storage kaldırıldı - artık Base64 kullanılıyor
+  firebase_storage: ^12.3.2
   cloud_functions: ^5.6.2
   
   # HTTP requests
@@ -30,18 +30,31 @@ dependencies:
   jose: ^0.3.2
   
   # Image picker (optional - for mobile admin panel)
-  image_picker: ^1.2.1
+  image_picker: ^1.2.0
   image_cropper: ^11.0.0
   image: ^4.3.0
+  
+  # Cached network images
+  cached_network_image: ^3.4.1
   
   # PDF generation
   pdf: ^3.11.1
   
   # File download for web
   universal_html: ^2.2.4
-
-  # Cached network images
-  cached_network_image: ^3.4.1
+  
+  # Charts for dashboard
+  fl_chart: ^0.66.0
+  
+  # Excel/CSV operations
+  excel: ^2.1.0
+  csv: ^5.0.2
+  
+  # File picker
+  file_picker: ^6.1.1
+  
+  # Internationalization
+  intl: ^0.19.0
 
 dev_dependencies:
   flutter_test:

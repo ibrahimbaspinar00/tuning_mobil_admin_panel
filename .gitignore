@@ -52,3 +52,21 @@ functions/node_modules
 functions/*-firebase-adminsdk-*.json
 functions/serviceAccountKey.json
 functions/*serviceAccount*.json/
+
+# Build outputs
+build/
+build/web/
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db

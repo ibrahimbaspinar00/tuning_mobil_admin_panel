@@ -9,6 +9,7 @@ import 'services/admin_service.dart';
 import 'services/email_service.dart';
 import 'services/app_theme.dart';
 import 'services/audit_log_service.dart';
+import 'utils/responsive_helper.dart';
 
 // Global admin şifre değişkeni
 String adminPassword = 'admin123';
@@ -78,6 +79,7 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _isLoading = false;
+  bool _isInitializing = true; // İlk yükleme durumu
   final AdminSettingsService _adminSettingsService = AdminSettingsService();
   
   // Şifre sıfırlama için
@@ -105,6 +107,7 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
           setState(() {
             adminUsername = settings.adminUsername;
             adminPassword = settings.adminPassword;
+            _isInitializing = false; // Yükleme tamamlandı
           });
         }
         debugPrint('✅ Firebase\'den admin ayarları yüklendi');
@@ -117,6 +120,11 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
         } catch (e) {
           debugPrint('⚠️ Varsayılan ayarlar oluşturulamadı: $e');
         }
+        if (mounted) {
+          setState(() {
+            _isInitializing = false; // Yükleme tamamlandı
+          });
+        }
       }
     } on TimeoutException catch (e) {
       debugPrint('⚠️ Admin ayarları yükleme timeout: $e');
@@ -125,6 +133,7 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
         setState(() {
           adminUsername = 'admin';
           adminPassword = 'admin123';
+          _isInitializing = false; // Yükleme tamamlandı
         });
       }
     } catch (e) {
@@ -134,6 +143,7 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
         setState(() {
           adminUsername = 'admin';
           adminPassword = 'admin123';
+          _isInitializing = false; // Yükleme tamamlandı
         });
       }
     }
@@ -141,11 +151,28 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
 
   @override
   Widget build(BuildContext context) {
-    // Responsive design
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isMobile = screenWidth < 768;
-    final isTablet = screenWidth >= 768 && screenWidth < 1024;
+    // İlk yükleme sırasında sadece loading göster
+    if (_isInitializing) {
+      return Scaffold(
+        body: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Colors.blue[800]!, Colors.blue[600]!],
+            ),
+          ),
+          child: const Center(
+            child: CircularProgressIndicator(
+              color: Colors.white,
+              strokeWidth: 4,
+            ),
+          ),
+        ),
+      );
+    }
     
+    // Responsive design
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
@@ -157,11 +184,23 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
         ),
         child: Center(
           child: Card(
-            margin: EdgeInsets.all(isMobile ? 16 : isTablet ? 24 : 32),
+            margin: ResponsiveHelper.responsivePadding(context),
             elevation: 8,
             child: Container(
-              width: isMobile ? screenWidth * 0.9 : isTablet ? 450 : 500,
-              padding: EdgeInsets.all(isMobile ? 20 : isTablet ? 28 : 32),
+              width: ResponsiveHelper.responsiveWidth(
+                context,
+                mobile: 0.9,
+                tablet: 0.7,
+                laptop: 0.5,
+                desktop: 0.45,
+              ),
+              padding: ResponsiveHelper.responsivePadding(
+                context,
+                mobile: 20.0,
+                tablet: 28.0,
+                laptop: 32.0,
+                desktop: 36.0,
+              ),
               child: Form(
                 key: _formKey,
                 child: SingleChildScrollView(
@@ -170,50 +209,105 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
                     children: [
                       // Logo
                       Container(
-                        width: isMobile ? 60 : isTablet ? 70 : 80,
-                        height: isMobile ? 60 : isTablet ? 70 : 80,
+                        width: ResponsiveHelper.responsiveIconSize(
+                          context,
+                          mobile: 60.0,
+                          tablet: 70.0,
+                          laptop: 80.0,
+                          desktop: 90.0,
+                        ),
+                        height: ResponsiveHelper.responsiveIconSize(
+                          context,
+                          mobile: 60.0,
+                          tablet: 70.0,
+                          laptop: 80.0,
+                          desktop: 90.0,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.blue[100],
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
                           Icons.admin_panel_settings,
-                          size: isMobile ? 30 : isTablet ? 35 : 40,
+                          size: ResponsiveHelper.responsiveIconSize(
+                            context,
+                            mobile: 30.0,
+                            tablet: 35.0,
+                            laptop: 40.0,
+                            desktop: 45.0,
+                          ),
                           color: Colors.blue[800],
                         ),
                       ),
-                      SizedBox(height: isMobile ? 16 : isTablet ? 20 : 24),
+                      SizedBox(
+                        height: ResponsiveHelper.responsiveSpacing(
+                          context,
+                          mobile: 16.0,
+                          tablet: 20.0,
+                          laptop: 24.0,
+                          desktop: 28.0,
+                        ),
+                      ),
                       
                       // Başlık
                       Text(
                         'Admin Panel',
                         style: TextStyle(
-                          fontSize: isMobile ? 22 : isTablet ? 25 : 28,
+                          fontSize: ResponsiveHelper.responsiveFontSize(
+                            context,
+                            mobile: 22.0,
+                            tablet: 25.0,
+                            laptop: 28.0,
+                            desktop: 32.0,
+                          ),
                           fontWeight: FontWeight.bold,
                           color: Colors.blue[800],
                         ),
                       ),
-                      SizedBox(height: isMobile ? 6 : 8),
+                      SizedBox(
+                        height: ResponsiveHelper.responsiveSpacing(
+                          context,
+                          mobile: 6.0,
+                          tablet: 8.0,
+                          laptop: 10.0,
+                          desktop: 12.0,
+                        ),
+                      ),
                       Text(
                         'Tuning App Yönetim Paneli',
                         style: TextStyle(
                           color: Colors.grey[600],
-                          fontSize: isMobile ? 14 : isTablet ? 15 : 16,
+                          fontSize: ResponsiveHelper.responsiveFontSize(
+                            context,
+                            mobile: 14.0,
+                            tablet: 15.0,
+                            laptop: 16.0,
+                            desktop: 18.0,
+                          ),
                         ),
                       ),
-                      SizedBox(height: isMobile ? 24 : isTablet ? 28 : 32),
+                      SizedBox(
+                        height: ResponsiveHelper.responsiveSpacing(
+                          context,
+                          mobile: 24.0,
+                          tablet: 28.0,
+                          laptop: 32.0,
+                          desktop: 36.0,
+                        ),
+                      ),
                       
-                      // Kullanıcı adı
+                      // Kullanıcı adı veya E-posta
                       TextFormField(
                         controller: _usernameController,
                         decoration: const InputDecoration(
-                          labelText: 'Kullanıcı Adı',
+                          labelText: 'Kullanıcı Adı veya E-posta',
                           prefixIcon: Icon(Icons.person),
                           border: OutlineInputBorder(),
+                          hintText: 'Kullanıcı adı veya e-posta adresinizi girin',
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
-                            return 'Kullanıcı adı gerekli';
+                            return 'Kullanıcı adı veya e-posta gerekli';
                           }
                           return null;
                         },
@@ -232,6 +326,10 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
                         validator: (value) {
                           if (value == null || value.isEmpty) {
                             return 'Şifre gerekli';
+                          }
+                          // Minimum 1 karakter kontrolü (hiçbir engel yok)
+                          if (value.length < 1) {
+                            return 'Şifre en az 1 karakter olmalıdır';
                           }
                           return null;
                         },
@@ -258,10 +356,19 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
                           ),
                           const SizedBox(height: 16),
                           
-                          // Şifre unutma butonu
-                          TextButton(
-                            onPressed: () => _showForgotPasswordDialog(),
-                            child: const Text('Şifremi Unuttum'),
+                          // Şifre unutma ve kayıt ol butonları
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              TextButton(
+                                onPressed: () => _showForgotPasswordDialog(),
+                                child: const Text('Şifremi Unuttum'),
+                              ),
+                              TextButton(
+                                onPressed: () => _showRegisterDialog(),
+                                child: const Text('Kayıt Ol'),
+                              ),
+                            ],
                           ),
                     ],
                   ),
@@ -409,24 +516,30 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
           }
         }
         
-        // Admin kullanıcı kontrolü
+        // Admin kullanıcı kontrolü (hem kullanıcı adı hem e-posta ile)
         AdminUser? foundAdminUser;
         for (var user in adminUsers) {
           final storedUsername = user.username.trim().toLowerCase();
+          final storedEmail = user.email.trim().toLowerCase();
           final storedPassword = user.password.trim();
           final enteredUserLower = enteredUsername.toLowerCase();
           
-          if (kDebugMode && storedUsername == enteredUserLower) {
-            debugPrint('Kullanıcı bulundu: username="$storedUsername", active=${user.isActive}, role="${user.role}", şifre eşleşiyor=${storedPassword == enteredPassword}');
+          // Hem kullanıcı adı hem e-posta ile kontrol et
+          final isUsernameMatch = storedUsername == enteredUserLower;
+          final isEmailMatch = storedEmail == enteredUserLower;
+          final isPasswordMatch = storedPassword == enteredPassword;
+          
+          if (kDebugMode && (isUsernameMatch || isEmailMatch)) {
+            debugPrint('Kullanıcı bulundu: username="$storedUsername", email="$storedEmail", active=${user.isActive}, role="${user.role}", şifre eşleşiyor=$isPasswordMatch');
           }
           
-          if (storedUsername == enteredUserLower &&
-              storedPassword == enteredPassword &&
+          if ((isUsernameMatch || isEmailMatch) &&
+              isPasswordMatch &&
               user.isActive &&
               (user.role.toLowerCase() == 'admin' || user.role.toLowerCase() == 'administrator')) {
             foundAdminUser = user;
             if (kDebugMode) {
-              debugPrint('Admin kullanıcı ile giriş başarılı: ${user.username}');
+              debugPrint('Admin kullanıcı ile giriş başarılı: ${user.username} (${isUsernameMatch ? "username" : "email"} ile)');
             }
             break;
           }
@@ -467,19 +580,28 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
           return;
         }
         
-        // Normal kullanıcı kontrolü (Admin rolü olmayanlar)
+        // Normal kullanıcı kontrolü (Admin rolü olmayanlar) - hem kullanıcı adı hem e-posta ile
         AdminUser? foundNormalUser;
         for (var user in adminUsers) {
           final storedUsername = user.username.trim().toLowerCase();
+          final storedEmail = user.email.trim().toLowerCase();
           final storedPassword = user.password.trim();
           final enteredUserLower = enteredUsername.toLowerCase();
           
-          if (storedUsername == enteredUserLower &&
-              storedPassword == enteredPassword &&
+          // Hem kullanıcı adı hem e-posta ile kontrol et
+          final isUsernameMatch = storedUsername == enteredUserLower;
+          final isEmailMatch = storedEmail == enteredUserLower;
+          final isPasswordMatch = storedPassword == enteredPassword;
+          
+          if ((isUsernameMatch || isEmailMatch) &&
+              isPasswordMatch &&
               user.isActive &&
               user.role.toLowerCase() != 'admin' &&
               user.role.toLowerCase() != 'administrator') {
             foundNormalUser = user;
+            if (kDebugMode) {
+              debugPrint('Normal kullanıcı ile giriş başarılı: ${user.username} (${isUsernameMatch ? "username" : "email"} ile)');
+            }
             break;
           }
         }
@@ -1009,5 +1131,412 @@ class _WebAdminLoginState extends State<WebAdminLogin> {
         });
       }
 
+  // Kayıt olma dialogu
+  void _showRegisterDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => _RegisterDialog(
+        onRegisterSuccess: (String username) {
+          // Kayıt başarılı olduğunda kullanıcı adını login sayfasına aktar
+          if (mounted) {
+            setState(() {
+              _usernameController.text = username;
+            });
+          }
+        },
+      ),
+    );
+  }
+}
 
+// Kayıt olma dialog widget'ı
+class _RegisterDialog extends StatefulWidget {
+  final Function(String username) onRegisterSuccess;
+
+  const _RegisterDialog({
+    required this.onRegisterSuccess,
+  });
+
+  @override
+  State<_RegisterDialog> createState() => _RegisterDialogState();
+}
+
+class _RegisterDialogState extends State<_RegisterDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _fullNameController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirmPassword = true;
+  final AdminService _adminService = AdminService();
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _emailController.dispose();
+    _fullNameController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(
+          ResponsiveHelper.responsiveBorderRadius(
+            context,
+            mobile: 16.0,
+            tablet: 18.0,
+            laptop: 20.0,
+            desktop: 22.0,
+          ),
+        ),
+      ),
+      child: Container(
+        width: ResponsiveHelper.responsiveDialogWidth(context),
+        constraints: BoxConstraints(
+          maxHeight: ResponsiveHelper.responsiveDialogHeight(context),
+        ),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Başlık
+                  Row(
+                    children: [
+                      Icon(Icons.person_add, color: Colors.blue[800], size: 28),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Yeni Hesap Oluştur',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[800],
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                        tooltip: 'Kapat',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  
+                  // Kullanıcı adı
+                  TextFormField(
+                    controller: _usernameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Kullanıcı Adı',
+                      prefixIcon: Icon(Icons.person),
+                      border: OutlineInputBorder(),
+                      hintText: 'Kullanıcı adınızı girin',
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Kullanıcı adı gerekli';
+                      }
+                      if (value.length < 3) {
+                        return 'Kullanıcı adı en az 3 karakter olmalıdır';
+                      }
+                      return null;
+                    },
+                    onChanged: (value) {
+                      // Kullanıcı adı müsaitlik kontrolü (opsiyonel - gerçek zamanlı)
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // E-posta
+                  TextFormField(
+                    controller: _emailController,
+                    decoration: const InputDecoration(
+                      labelText: 'E-posta',
+                      prefixIcon: Icon(Icons.email),
+                      border: OutlineInputBorder(),
+                      hintText: 'E-posta adresinizi girin',
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'E-posta gerekli';
+                      }
+                      if (!value.contains('@') || !value.contains('.')) {
+                        return 'Geçerli bir e-posta adresi girin';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Tam ad
+                  TextFormField(
+                    controller: _fullNameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Tam Ad',
+                      prefixIcon: Icon(Icons.badge),
+                      border: OutlineInputBorder(),
+                      hintText: 'Adınız ve soyadınız',
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Tam ad gerekli';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Şifre
+                  TextFormField(
+                    controller: _passwordController,
+                    obscureText: _obscurePassword,
+                    decoration: InputDecoration(
+                      labelText: 'Şifre',
+                      prefixIcon: const Icon(Icons.lock),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
+                      ),
+                      border: const OutlineInputBorder(),
+                      hintText: 'Şifrenizi girin (min 1 karakter)',
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Şifre gerekli';
+                      }
+                      if (value.length < 1) {
+                        return 'Şifre en az 1 karakter olmalıdır';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Şifre tekrar
+                  TextFormField(
+                    controller: _confirmPasswordController,
+                    obscureText: _obscureConfirmPassword,
+                    decoration: InputDecoration(
+                      labelText: 'Şifre Tekrar',
+                      prefixIcon: const Icon(Icons.lock_outline),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureConfirmPassword ? Icons.visibility : Icons.visibility_off,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscureConfirmPassword = !_obscureConfirmPassword;
+                          });
+                        },
+                      ),
+                      border: const OutlineInputBorder(),
+                      hintText: 'Şifrenizi tekrar girin',
+                    ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Şifre tekrar gerekli';
+                      }
+                      if (value != _passwordController.text) {
+                        return 'Şifreler eşleşmiyor';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  
+                  // Kayıt ol butonu
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _register,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green[600],
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      child: _isLoading
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : const Text(
+                              'Kayıt Ol',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Zaten hesabınız var mı?
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('Zaten hesabınız var mı? '),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.pop(context);
+                        },
+                        child: const Text('Giriş Yap'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _register() async {
+    if (_formKey.currentState!.validate()) {
+      if (!mounted) return;
+      
+      setState(() {
+        _isLoading = true;
+      });
+      
+      try {
+        // Kullanıcı adı ve e-posta müsaitlik kontrolü
+        final usernameAvailable = await _adminService.isUsernameAvailable(
+          _usernameController.text.trim(),
+        );
+        
+        if (!usernameAvailable) {
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Bu kullanıcı adı zaten kullanılıyor'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          return;
+        }
+        
+        final emailAvailable = await _adminService.isEmailAvailable(
+          _emailController.text.trim(),
+        );
+        
+        if (!emailAvailable) {
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Bu e-posta adresi zaten kullanılıyor'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          return;
+        }
+        
+        // Yeni kullanıcı oluştur
+        final newUser = AdminUser(
+          id: '', // Boş bırak, AdminService otomatik oluşturacak
+          username: _usernameController.text.trim(),
+          email: _emailController.text.trim(),
+          fullName: _fullNameController.text.trim(),
+          role: 'user', // Varsayılan rol: user
+          password: _passwordController.text.trim(),
+          isActive: true,
+          createdAt: DateTime.now(),
+          lastLogin: DateTime.now(),
+        );
+        
+        // Kullanıcıyı kaydet
+        await _adminService.addUser(newUser);
+        
+        // Audit log (username ile, çünkü ID henüz bilinmiyor)
+        try {
+          await AuditLogService.logAction(
+            userId: newUser.username,
+            action: 'register',
+            resource: 'auth',
+            details: {
+              'username': newUser.username,
+              'email': newUser.email,
+              'fullName': newUser.fullName,
+            },
+          );
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint('Audit log hatası: $e');
+          }
+        }
+        
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+          
+          // Dialog'u önce kapat
+          Navigator.pop(context);
+          
+          // Kısa bir gecikme sonrası callback çağır (mesaj gösterimi için)
+          await Future.delayed(const Duration(milliseconds: 300));
+          
+          // Callback çağır - kullanıcı adını login sayfasına aktar
+          widget.onRegisterSuccess(newUser.username);
+          
+          // Başarı mesajı - login sayfasında göster
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('✅ Kayıt başarılı! ${newUser.username} olarak giriş yapabilirsiniz.'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+          
+          String errorMessage = 'Kayıt olurken hata oluştu: $e';
+          
+          if (e.toString().contains('zaten kullanılıyor')) {
+            errorMessage = e.toString().replaceAll('Exception: ', '');
+          }
+          
+          // Hata mesajını göster (dialog açık kalır)
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(errorMessage),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    }
+  }
 }

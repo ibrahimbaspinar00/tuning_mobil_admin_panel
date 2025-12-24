@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'model/admin_user.dart';
 import 'services/admin_service.dart';
 import 'services/permission_service.dart';
+import 'utils/responsive_helper.dart';
 
 class WebAdminUserManagement extends StatefulWidget {
   const WebAdminUserManagement({super.key});
@@ -16,6 +17,9 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
   final TextEditingController _searchController = TextEditingController();
   String _selectedRole = 'Tümü';
   String _selectedStatus = 'Tümü';
+  Set<String> _selectedUserIds = {}; // Toplu işlemler için
+  String _viewMode = 'grid'; // 'grid' or 'list'
+  String _sortBy = 'createdAt'; // 'name', 'email', 'role', 'createdAt', 'lastLogin'
 
   @override
   void dispose() {
@@ -52,7 +56,7 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text(
-                                'Admin Kullanıcı Yönetimi',
+                                'Admin Kullanıcılar',
                                 style: TextStyle(
                                   fontSize: 22,
                                   fontWeight: FontWeight.bold,
@@ -95,7 +99,7 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     const Text(
-                                      'Admin Kullanıcı Yönetimi',
+                                      'Admin Kullanıcılar',
                                       style: TextStyle(
                                         fontSize: 28,
                                         fontWeight: FontWeight.bold,
@@ -113,20 +117,63 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                                   ],
                                 ),
                               ),
-                              if (PermissionService.canCreateUsers())
-                                ElevatedButton.icon(
-                                  onPressed: () => _showAddUserDialog(),
-                                  icon: const Icon(Icons.person_add),
-                                  label: const Text('Yeni Kullanıcı'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF6366F1),
-                                    foregroundColor: Colors.white,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 24,
-                                      vertical: 12,
+                              Row(
+                                children: [
+                                  // Toplu işlemler butonu
+                                  if (_selectedUserIds.isNotEmpty)
+                                    ElevatedButton.icon(
+                                      onPressed: () => _showBulkActionsDialog(),
+                                      icon: const Icon(Icons.batch_prediction),
+                                      label: Text('Toplu İşlem (${_selectedUserIds.length})'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.orange,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 12,
+                                        ),
+                                      ),
                                     ),
+                                  if (_selectedUserIds.isNotEmpty) const SizedBox(width: 8),
+                                  // Görünüm modu
+                                  SegmentedButton<String>(
+                                    segments: const [
+                                      ButtonSegment(
+                                        value: 'grid',
+                                        icon: Icon(Icons.grid_view),
+                                        label: Text('Grid'),
+                                      ),
+                                      ButtonSegment(
+                                        value: 'list',
+                                        icon: Icon(Icons.list),
+                                        label: Text('Liste'),
+                                      ),
+                                    ],
+                                    selected: {_viewMode},
+                                    onSelectionChanged: (Set<String> selection) {
+                                      setState(() {
+                                        _viewMode = selection.first;
+                                      });
+                                    },
                                   ),
-                                ),
+                                  const SizedBox(width: 8),
+                                  // Yeni kullanıcı butonu
+                                  if (PermissionService.canCreateUsers())
+                                    ElevatedButton.icon(
+                                      onPressed: () => _showAddUserDialog(),
+                                      icon: const Icon(Icons.person_add),
+                                      label: const Text('Yeni Kullanıcı'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF6366F1),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 24,
+                                          vertical: 12,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ],
                           ),
                     const SizedBox(height: 24),
@@ -297,6 +344,32 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                               },
                             ),
                           ),
+                          const SizedBox(width: 12),
+                          // Sıralama
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[50],
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: Colors.grey[300]!),
+                            ),
+                            child: DropdownButton<String>(
+                              value: _sortBy,
+                              underline: const SizedBox(),
+                              items: const [
+                                DropdownMenuItem(value: 'createdAt', child: Text('Kayıt Tarihi')),
+                                DropdownMenuItem(value: 'name', child: Text('İsim')),
+                                DropdownMenuItem(value: 'email', child: Text('E-posta')),
+                                DropdownMenuItem(value: 'role', child: Text('Rol')),
+                                DropdownMenuItem(value: 'lastLogin', child: Text('Son Giriş')),
+                              ],
+                              onChanged: (value) {
+                                setState(() {
+                                  _sortBy = value!;
+                                });
+                              },
+                            ),
+                          ),
                         ],
                       );
                     }
@@ -308,6 +381,44 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
             },
           ),
 
+          // İstatistikler
+          StreamBuilder<List<AdminUser>>(
+            stream: _adminService.getUsers(),
+            builder: (context, snapshot) {
+              if (!snapshot.hasData || _selectedUserIds.isNotEmpty) {
+                return const SizedBox.shrink();
+              }
+              
+              final allUsers = snapshot.data ?? [];
+              final totalUsers = allUsers.length;
+              final activeUsers = allUsers.where((u) => u.isActive).length;
+              final inactiveUsers = totalUsers - activeUsers;
+              final adminCount = allUsers.where((u) => u.role.toLowerCase() == 'admin').length;
+              final moderatorCount = allUsers.where((u) => u.role.toLowerCase() == 'moderator').length;
+              final userCount = allUsers.where((u) => u.role.toLowerCase() == 'user').length;
+              
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                color: Colors.white,
+                child: Row(
+                  children: [
+                    _buildStatCard('Toplam', totalUsers.toString(), Icons.people, Colors.blue),
+                    const SizedBox(width: 12),
+                    _buildStatCard('Aktif', activeUsers.toString(), Icons.check_circle, Colors.green),
+                    const SizedBox(width: 12),
+                    _buildStatCard('Pasif', inactiveUsers.toString(), Icons.block, Colors.grey),
+                    const SizedBox(width: 12),
+                    _buildStatCard('Admin', adminCount.toString(), Icons.admin_panel_settings, Colors.red),
+                    const SizedBox(width: 12),
+                    _buildStatCard('Moderatör', moderatorCount.toString(), Icons.shield, Colors.orange),
+                    const SizedBox(width: 12),
+                    _buildStatCard('Kullanıcı', userCount.toString(), Icons.person, Colors.blue),
+                  ],
+                ),
+              );
+            },
+          ),
+          
           // User List - Responsive padding
           Expanded(
             child: LayoutBuilder(
@@ -488,38 +599,37 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
           );
         }
 
-        // Responsive grid: mobil için 1-2, tablet için 3, desktop için 4-5 sütun
-        final screenWidth = MediaQuery.of(context).size.width;
-        int crossAxisCount;
-        double childAspectRatio;
-        
-        if (screenWidth < 600) {
-          // Mobil
-          crossAxisCount = 1;
-          childAspectRatio = 3.5;
-        } else if (screenWidth < 900) {
-          // Küçük tablet
-          crossAxisCount = 2;
-          childAspectRatio = 2.2;
-        } else if (screenWidth < 1200) {
-          // Tablet
-          crossAxisCount = 3;
-          childAspectRatio = 1.8;
-        } else if (screenWidth < 1600) {
-          // Küçük desktop
-          crossAxisCount = 4;
-          childAspectRatio = 1.5;
-        } else {
-          // Büyük desktop
-          crossAxisCount = 5;
-          childAspectRatio = 1.3;
-        }
+        // Responsive grid using ResponsiveHelper
+        final crossAxisCount = ResponsiveHelper.responsiveColumns(
+          context,
+          mobile: 1,
+          tablet: 2,
+          laptop: 3,
+          desktop: 4,
+        );
+        final childAspectRatio = ResponsiveHelper.responsiveValue<double>(
+          context,
+          mobile: 2.8,
+          tablet: 1.8,
+          laptop: 1.4,
+          desktop: 1.2,
+        );
 
+        if (_viewMode == 'list') {
+          return ListView.builder(
+            itemCount: users.length,
+            itemBuilder: (context, index) {
+              return _buildUserListItem(users[index]);
+            },
+          );
+        }
+        
         return GridView.builder(
+          padding: ResponsiveHelper.responsivePadding(context),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossAxisCount,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
+            crossAxisSpacing: ResponsiveHelper.responsiveGridSpacing(context),
+            mainAxisSpacing: ResponsiveHelper.responsiveGridSpacing(context),
             childAspectRatio: childAspectRatio,
           ),
           itemCount: users.length,
@@ -533,31 +643,46 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
 
   Widget _buildUserCard(AdminUser user) {
     final roleColor = _getRoleColor(user.role);
+    final isSelected = _selectedUserIds.contains(user.id);
     
     return Card(
-      elevation: 0,
+      elevation: isSelected ? 4 : 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: user.isActive
-              ? Colors.green.withValues(alpha: 0.3)
-              : Colors.grey.withValues(alpha: 0.2),
-          width: 1,
+          color: isSelected
+              ? const Color(0xFF6366F1)
+              : user.isActive
+                  ? Colors.green.withValues(alpha: 0.3)
+                  : Colors.grey.withValues(alpha: 0.2),
+          width: isSelected ? 2 : 1,
         ),
       ),
       child: InkWell(
         onTap: () => _showUserDetails(user),
         borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
               Row(
                 children: [
+                  Checkbox(
+                    value: isSelected,
+                    onChanged: (value) {
+                      setState(() {
+                        if (value == true) {
+                          _selectedUserIds.add(user.id);
+                        } else {
+                          _selectedUserIds.remove(user.id);
+                        }
+                      });
+                    },
+                  ),
                   CircleAvatar(
-                    radius: 24,
+                    radius: 20,
                     backgroundColor: roleColor.withValues(alpha: 0.2),
                     child: Text(
                       user.fullName.isNotEmpty
@@ -566,7 +691,7 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                       style: TextStyle(
                         color: roleColor,
                         fontWeight: FontWeight.bold,
-                        fontSize: 20,
+                        fontSize: 18,
                       ),
                     ),
                   ),
@@ -586,6 +711,29 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                             ],
                           ),
                         ),
+                      if (PermissionService.canUpdateUsers())
+                        const PopupMenuItem(
+                          value: 'reset_password',
+                          child: Row(
+                            children: [
+                              Icon(Icons.lock_reset, size: 18, color: Colors.orange),
+                              SizedBox(width: 8),
+                              Text('Şifre Sıfırla', style: TextStyle(color: Colors.orange)),
+                            ],
+                          ),
+                        ),
+                      if (PermissionService.canCreateUsers())
+                        const PopupMenuItem(
+                          value: 'duplicate',
+                          child: Row(
+                            children: [
+                              Icon(Icons.copy, size: 18),
+                              SizedBox(width: 8),
+                              Text('Kopyala'),
+                            ],
+                          ),
+                        ),
+                      const PopupMenuDivider(),
                       PopupMenuItem(
                         value: user.isActive ? 'deactivate' : 'activate',
                         child: Row(
@@ -599,6 +747,17 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                           ],
                         ),
                       ),
+                      if (PermissionService.canUpdateUsers())
+                        const PopupMenuItem(
+                          value: 'change_role',
+                          child: Row(
+                            children: [
+                              Icon(Icons.swap_horiz, size: 18),
+                              SizedBox(width: 8),
+                              Text('Rol Değiştir'),
+                            ],
+                          ),
+                        ),
                       if (PermissionService.canDeleteUsers())
                         const PopupMenuDivider(),
                       if (PermissionService.canDeleteUsers())
@@ -616,45 +775,49 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              Text(
-                user.fullName,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1E293B),
+              const SizedBox(height: 8),
+              Flexible(
+                child: Text(
+                  user.fullName,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1E293B),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 4),
-              Text(
-                user.email,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.grey[600],
+              Flexible(
+                child: Text(
+                  user.email,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               Wrap(
-                spacing: 6,
-                runSpacing: 6,
+                spacing: 4,
+                runSpacing: 4,
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
+                      horizontal: 8,
+                      vertical: 4,
                     ),
                     decoration: BoxDecoration(
                       color: roleColor.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       _getRoleDisplayName(user.role),
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         color: roleColor,
                         fontWeight: FontWeight.w600,
                       ),
@@ -664,22 +827,24 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
                   ),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
+                      horizontal: 8,
+                      vertical: 4,
                     ),
                     decoration: BoxDecoration(
                       color: user.isActive
                           ? Colors.green.withValues(alpha: 0.1)
                           : Colors.grey.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
                       user.isActive ? 'Aktif' : 'Pasif',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11,
                         color: user.isActive ? Colors.green[700] : Colors.grey[700],
                         fontWeight: FontWeight.w600,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
@@ -687,6 +852,192 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // Liste görünümü için kullanıcı kartı
+  Widget _buildUserListItem(AdminUser user) {
+    final roleColor = _getRoleColor(user.role);
+    final isSelected = _selectedUserIds.contains(user.id);
+    
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: isSelected ? 4 : 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: isSelected
+              ? const Color(0xFF6366F1)
+              : Colors.grey.withValues(alpha: 0.2),
+          width: isSelected ? 2 : 1,
+        ),
+      ),
+      child: ListTile(
+        leading: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Checkbox(
+              value: isSelected,
+              onChanged: (value) {
+                setState(() {
+                  if (value == true) {
+                    _selectedUserIds.add(user.id);
+                  } else {
+                    _selectedUserIds.remove(user.id);
+                  }
+                });
+              },
+            ),
+            const SizedBox(width: 8),
+            CircleAvatar(
+              backgroundColor: roleColor.withValues(alpha: 0.2),
+              child: Text(
+                user.fullName.isNotEmpty
+                    ? user.fullName[0].toUpperCase()
+                    : 'U',
+                style: TextStyle(
+                  color: roleColor,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        title: Text(
+          user.fullName,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${user.email} • ${user.username}'),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: roleColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    _getRoleDisplayName(user.role),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: roleColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: user.isActive
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : Colors.grey.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    user.isActive ? 'Aktif' : 'Pasif',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: user.isActive ? Colors.green[700] : Colors.grey[700],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        trailing: PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert),
+          onSelected: (value) => _handleMenuAction(value, user),
+          itemBuilder: (context) => [
+            if (PermissionService.canUpdateUsers())
+              const PopupMenuItem(
+                value: 'edit',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit, size: 18),
+                    SizedBox(width: 8),
+                    Text('Düzenle'),
+                  ],
+                ),
+              ),
+            if (PermissionService.canUpdateUsers())
+              const PopupMenuItem(
+                value: 'reset_password',
+                child: Row(
+                  children: [
+                    Icon(Icons.lock_reset, size: 18, color: Colors.orange),
+                    SizedBox(width: 8),
+                    Text('Şifre Sıfırla', style: TextStyle(color: Colors.orange)),
+                  ],
+                ),
+              ),
+            if (PermissionService.canCreateUsers())
+              const PopupMenuItem(
+                value: 'duplicate',
+                child: Row(
+                  children: [
+                    Icon(Icons.copy, size: 18),
+                    SizedBox(width: 8),
+                    Text('Kopyala'),
+                  ],
+                ),
+              ),
+            const PopupMenuDivider(),
+            const PopupMenuItem(
+              value: 'activate',
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle, size: 18),
+                  SizedBox(width: 8),
+                  Text('Aktifleştir'),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'deactivate',
+              child: Row(
+                children: [
+                  Icon(Icons.block, size: 18),
+                  SizedBox(width: 8),
+                  Text('Pasifleştir'),
+                ],
+              ),
+            ),
+            if (PermissionService.canUpdateUsers())
+              const PopupMenuItem(
+                value: 'change_role',
+                child: Row(
+                  children: [
+                    Icon(Icons.swap_horiz, size: 18),
+                    SizedBox(width: 8),
+                    Text('Rol Değiştir'),
+                  ],
+                ),
+              ),
+            if (PermissionService.canDeleteUsers())
+              const PopupMenuDivider(),
+            if (PermissionService.canDeleteUsers())
+              const PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete, size: 18, color: Colors.red),
+                    SizedBox(width: 8),
+                    Text('Sil', style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
+          ],
+        ),
+        onTap: () => _showUserDetails(user),
+        isThreeLine: true,
       ),
     );
   }
@@ -721,6 +1072,15 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
     switch (action) {
       case 'edit':
         _showEditUserDialog(user);
+        break;
+      case 'reset_password':
+        _showResetPasswordDialog(user);
+        break;
+      case 'duplicate':
+        _duplicateUser(user);
+        break;
+      case 'change_role':
+        _showChangeRoleDialog(user);
         break;
       case 'activate':
         _toggleUserStatus(user, true);
@@ -1076,8 +1436,526 @@ class _WebAdminUserManagementState extends State<WebAdminUserManagement> {
     }
   }
 
+  // Şifre sıfırlama dialogu
+  void _showResetPasswordDialog(AdminUser user) {
+    final passwordController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Şifre Sıfırla'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('${user.fullName} için yeni şifre belirleyin:'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: passwordController,
+              decoration: const InputDecoration(
+                labelText: 'Yeni Şifre',
+                border: OutlineInputBorder(),
+                hintText: 'Minimum 1 karakter',
+              ),
+              obscureText: true,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (passwordController.text.isNotEmpty) {
+                Navigator.pop(context);
+                _resetPassword(user, passwordController.text);
+              }
+            },
+            child: const Text('Sıfırla'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Şifre sıfırlama
+  Future<void> _resetPassword(AdminUser user, String newPassword) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    try {
+      final updatedUser = user.copyWith(password: newPassword);
+      await _adminService.updateUser(updatedUser);
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${user.fullName} için şifre sıfırlandı'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Hata: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  // Kullanıcı kopyalama
+  Future<void> _duplicateUser(AdminUser user) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    try {
+      final duplicatedUser = AdminUser(
+        id: '',
+        username: '${user.username}_copy_${DateTime.now().millisecondsSinceEpoch}',
+        email: 'copy_${DateTime.now().millisecondsSinceEpoch}_${user.email}',
+        fullName: '${user.fullName} (Kopya)',
+        role: user.role,
+        password: user.password,
+        isActive: false, // Kopyalanan kullanıcı pasif olarak oluşturulur
+        createdAt: DateTime.now(),
+        lastLogin: DateTime.now(),
+      );
+      
+      await _adminService.addUser(duplicatedUser);
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${user.fullName} kopyalandı'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Hata: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  // Rol değiştirme dialogu
+  void _showChangeRoleDialog(AdminUser user) {
+    String selectedRole = user.role;
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Rol Değiştir'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('${user.fullName} için yeni rol seçin:'),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: selectedRole,
+                decoration: const InputDecoration(
+                  labelText: 'Rol',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                  DropdownMenuItem(value: 'moderator', child: Text('Moderatör')),
+                  DropdownMenuItem(value: 'user', child: Text('Kullanıcı')),
+                ],
+                onChanged: (value) {
+                  setState(() {
+                    selectedRole = value!;
+                  });
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('İptal'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _changeUserRole(user, selectedRole);
+              },
+              child: const Text('Değiştir'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Rol değiştirme
+  Future<void> _changeUserRole(AdminUser user, String newRole) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    try {
+      final updatedUser = user.copyWith(role: newRole);
+      await _adminService.updateUser(updatedUser);
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${user.fullName} rolü ${_getRoleDisplayName(newRole)} olarak değiştirildi'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Hata: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  // Toplu işlemler dialogu
+  void _showBulkActionsDialog() {
+    if (_selectedUserIds.isEmpty) return;
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Toplu İşlem (${_selectedUserIds.length} kullanıcı)'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                _bulkActivateUsers();
+              },
+              icon: const Icon(Icons.check_circle),
+              label: const Text('Aktifleştir'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 48),
+              ),
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                _bulkDeactivateUsers();
+              },
+              icon: const Icon(Icons.block),
+              label: const Text('Pasifleştir'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(double.infinity, 48),
+              ),
+            ),
+            if (PermissionService.canDeleteUsers()) ...[
+              const SizedBox(height: 8),
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _showBulkDeleteDialog();
+                },
+                icon: const Icon(Icons.delete),
+                label: const Text('Sil'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 48),
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Toplu aktifleştirme
+  Future<void> _bulkActivateUsers() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    int successCount = 0;
+    int failCount = 0;
+
+    try {
+      final users = await _adminService.getUsers().first;
+      final usersToUpdate = users.where((u) => _selectedUserIds.contains(u.id)).toList();
+      
+      for (var user in usersToUpdate) {
+        try {
+          final updatedUser = user.copyWith(isActive: true);
+          await _adminService.updateUser(updatedUser);
+          successCount++;
+        } catch (e) {
+          failCount++;
+        }
+      }
+
+      if (mounted) {
+        Navigator.pop(context);
+        setState(() {
+          _selectedUserIds.clear();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$successCount kullanıcı aktifleştirildi${failCount > 0 ? ', $failCount başarısız' : ''}',
+            ),
+            backgroundColor: failCount > 0 ? Colors.orange : Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Hata: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  // Toplu pasifleştirme
+  Future<void> _bulkDeactivateUsers() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    int successCount = 0;
+    int failCount = 0;
+
+    try {
+      final users = await _adminService.getUsers().first;
+      final usersToUpdate = users.where((u) => _selectedUserIds.contains(u.id)).toList();
+      
+      for (var user in usersToUpdate) {
+        try {
+          final updatedUser = user.copyWith(isActive: false);
+          await _adminService.updateUser(updatedUser);
+          successCount++;
+        } catch (e) {
+          failCount++;
+        }
+      }
+
+      if (mounted) {
+        Navigator.pop(context);
+        setState(() {
+          _selectedUserIds.clear();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$successCount kullanıcı pasifleştirildi${failCount > 0 ? ', $failCount başarısız' : ''}',
+            ),
+            backgroundColor: failCount > 0 ? Colors.orange : Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Hata: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  // Toplu silme dialogu
+  void _showBulkDeleteDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Toplu Silme'),
+        content: Text(
+          '${_selectedUserIds.length} kullanıcıyı silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _bulkDeleteUsers();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Toplu silme
+  Future<void> _bulkDeleteUsers() async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    int successCount = 0;
+    int failCount = 0;
+
+    try {
+      final users = await _adminService.getUsers().first;
+      final usersToDelete = users.where((u) => _selectedUserIds.contains(u.id)).toList();
+      
+      for (var user in usersToDelete) {
+        try {
+          await _adminService.deleteUser(user.id);
+          successCount++;
+        } catch (e) {
+          failCount++;
+        }
+      }
+
+      if (mounted) {
+        Navigator.pop(context);
+        setState(() {
+          _selectedUserIds.clear();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '$successCount kullanıcı silindi${failCount > 0 ? ', $failCount başarısız' : ''}',
+            ),
+            backgroundColor: failCount > 0 ? Colors.orange : Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Hata: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
   String _formatDate(DateTime date) {
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+
+  // İstatistik kartı
+  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 24),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: color,
+                    ),
+                  ),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildStep(String number, String text) {

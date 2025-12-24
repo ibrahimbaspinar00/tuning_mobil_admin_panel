@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'services/admin_service.dart';
 import 'model/order.dart' as OrderModel;
+import 'web_admin_order_detail.dart';
 
 class WebAdminOrders extends StatefulWidget {
   const WebAdminOrders({super.key});
@@ -564,135 +565,15 @@ class _WebAdminOrdersState extends State<WebAdminOrders> {
   }
 
   void _viewOrderDetails(OrderModel.Order order) {
-    showDialog(
-      context: context,
-      builder: (context) => LayoutBuilder(
-        builder: (context, constraints) {
-          final isMobile = constraints.maxWidth < 600;
-          
-          return AlertDialog(
-            title: Text(
-              'Sipariş Detayları #${order.id}',
-              style: TextStyle(fontSize: isMobile ? 16 : 20),
-            ),
-            contentPadding: EdgeInsets.all(isMobile ? 16 : 24),
-            content: SizedBox(
-              width: isMobile ? double.infinity : 500,
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildDetailRow('Müşteri', order.customerName, isMobile),
-                    _buildDetailRow('E-posta', order.customerEmail, isMobile),
-                    _buildDetailRow('Telefon', order.customerPhone, isMobile),
-                    _buildDetailRow('Adres', order.shippingAddress, isMobile),
-                    _buildDetailRow('Sipariş Tarihi', _formatDate(order.orderDate), isMobile),
-                    _buildDetailRow('Durum', _getStatusText(order.status), isMobile),
-                    _buildDetailRow('Toplam Tutar', '${order.totalAmount.toStringAsFixed(2)} TL', isMobile),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Ürünler:',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: isMobile ? 14 : 16,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    ...order.products.map((product) => Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        '• ${product.name} x${product.quantity} - ${product.price} TL',
-                        style: TextStyle(fontSize: isMobile ? 12 : 14),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 2,
-                      ),
-                    )),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Kapat'),
-              ),
-            ],
-          );
-        },
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => WebAdminOrderDetail(order: order),
       ),
     );
   }
 
-  Widget _buildDetailRow(String label, String value, bool isMobile) {
-    if (isMobile) {
-      // Mobile: Dikey düzen
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '$label:',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
-                color: Colors.grey[700],
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: const TextStyle(fontSize: 14),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 3,
-            ),
-          ],
-        ),
-      );
-    } else {
-      // Desktop: Yatay düzen
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(
-              width: 120,
-              child: Text(
-                '$label:',
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-            Expanded(
-              child: Text(
-                value,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 3,
-              ),
-            ),
-          ],
-        ),
-      );
-    }
-  }
 
-  String _getStatusText(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending':
-        return 'Beklemede';
-      case 'confirmed':
-        return 'Onaylandı';
-      case 'shipped':
-        return 'Kargoya Verildi';
-      case 'delivered':
-        return 'Teslim Edildi';
-      case 'cancelled':
-        return 'İptal Edildi';
-      default:
-        return 'Bilinmiyor';
-    }
-  }
 
   void _updateOrderStatus(OrderModel.Order order) {
     // İngilizce status'u Türkçe'ye çevir (dropdown için)

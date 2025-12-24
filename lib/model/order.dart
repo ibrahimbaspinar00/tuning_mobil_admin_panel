@@ -11,6 +11,7 @@ enum OrderStatus {
 
 class Order {
   final String id;
+  final String? userId;
   final List<Product> products;
   final double totalAmount;
   final DateTime orderDate;
@@ -24,6 +25,7 @@ class Order {
 
   Order({
     required this.id,
+    this.userId,
     required this.products,
     required this.totalAmount,
     required this.orderDate,
@@ -79,6 +81,7 @@ class Order {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      if (userId != null) 'userId': userId,
       'products': products.map((p) => p.toMap()).toList(),
       'totalAmount': totalAmount,
       'orderDate': orderDate.toIso8601String(),
@@ -96,6 +99,7 @@ class Order {
   factory Order.fromMap(Map<String, dynamic> map) {
     return Order(
       id: map['id'] ?? '',
+      userId: map['userId'],
       products: (map['products'] as List<dynamic>?)
           ?.map((p) => Product.fromMap(p as Map<String, dynamic>))
           .toList() ?? [],

@@ -60,7 +60,8 @@ class _WebAdminPriceManagementState extends State<WebAdminPriceManagement> {
     });
 
     try {
-      final products = await _adminService.getProducts().first;
+      // Server-side fetch kullan (cache bypass) - Web uygulaması için kritik
+      final products = await _adminService.getProductsFromServer();
       if (mounted) {
         setState(() {
           _products = products;

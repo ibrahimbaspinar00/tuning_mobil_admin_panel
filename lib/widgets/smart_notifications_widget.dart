@@ -21,11 +21,12 @@ class _SmartNotificationsWidgetState extends State<SmartNotificationsWidget> {
 
   Future<void> _loadNotifications() async {
     try {
-      final products = await _adminService.getProducts().first;
+      // Server-side fetch kullan (cache bypass) - Web uygulaması için kritik
+      final products = await _adminService.getProductsFromServer();
       final notifications = <NotificationItem>[];
 
       // Düşük stok uyarıları
-      final validProducts = products.cast<AdminProduct>().toList();
+      final validProducts = products;
       final lowStockProducts = validProducts.where((p) => p.stock <= 10).toList();
       if (lowStockProducts.isNotEmpty) {
         notifications.add(NotificationItem(

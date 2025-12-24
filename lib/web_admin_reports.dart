@@ -37,7 +37,8 @@ class _WebAdminReportsState extends State<WebAdminReports> {
     });
     
     try {
-      final products = await _adminService.getProducts().first;
+      // Server-side fetch kullan (cache bypass) - Web uygulaması için kritik
+      final products = await _adminService.getProductsFromServer();
       final orders = await _adminService.getOrders().first;
       if (mounted) {
         setState(() {

@@ -51,8 +51,8 @@ class AdminProduct {
       'category': category,
       'imageUrl': imageUrl,
       'isActive': isActive,
-      'createdAt': createdAt,
-      'updatedAt': updatedAt,
+      'createdAt': Timestamp.fromDate(createdAt),
+      'updatedAt': Timestamp.fromDate(updatedAt),
     };
   }
 
@@ -98,13 +98,33 @@ class ProductCategory {
     this.isActive = true,
   });
 
-  factory ProductCategory.fromFirestore(Map<String, dynamic> data, String id) {
-    return ProductCategory(
-      id: id,
-      name: data['name'] ?? '',
-      description: data['description'] ?? '',
-      isActive: data['isActive'] ?? true,
-    );
+  factory ProductCategory.fromFirestore(Map<String, dynamic>? data, String id) {
+    // Null veya geçersiz veri kontrolü
+    if (data == null || data.isEmpty) {
+      return ProductCategory(
+        id: id,
+        name: '',
+        description: '',
+        isActive: false,
+      );
+    }
+    
+    try {
+      return ProductCategory(
+        id: id,
+        name: data['name']?.toString() ?? '',
+        description: data['description']?.toString() ?? '',
+        isActive: data['isActive'] is bool ? data['isActive'] as bool : (data['isActive'] == true || data['isActive'] == 1),
+      );
+    } catch (e) {
+      // Hata durumunda varsayılan değerlerle döndür
+      return ProductCategory(
+        id: id,
+        name: '',
+        description: '',
+        isActive: false,
+      );
+    }
   }
 
   Map<String, dynamic> toFirestore() {

@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'model/admin_user.dart';
 import 'services/admin_service.dart';
 import 'services/permission_service.dart';
 import 'services/theme_service.dart';
 import 'services/app_theme.dart';
+import 'utils/responsive_helper.dart';
+import 'services/external_image_upload_service.dart';
 
 class WebAdminProfile extends StatefulWidget {
   const WebAdminProfile({super.key});
@@ -32,6 +36,7 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
   
   AdminUser? _currentUser;
   String? _avatarUrl;
+  Uint8List? _pendingAvatarBytes; // seçildi ama henüz upload edilmedi (Kaydet'te upload olacak)
   
   late TabController _tabController;
   Map<String, dynamic> _userStats = {};
@@ -234,7 +239,8 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
 
   Future<void> _loadUserStatistics() async {
     try {
-      final products = await _adminService.getProducts().first;
+      // Server-side fetch kullan (cache bypass) - Web uygulaması için kritik
+      final products = await _adminService.getProductsFromServer();
       final orders = await _adminService.getOrders().first;
       
       setState(() {
@@ -267,6 +273,35 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
     });
 
     try {
+      // Avatar seçildiyse, Kaydet sırasında harici storage'a (Cloudinary) yükle
+      if (_pendingAvatarBytes != null && _pendingAvatarBytes!.isNotEmpty) {
+        if (!ExternalImageUploadService.isConfigured) {
+          throw Exception(
+            'Cloudinary ayarları eksik. '
+            'lib/config/external_image_storage_config.dart dosyasını kontrol edin.',
+          );
+        }
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('📤 Profil fotoğrafı yükleniyor...'),
+              backgroundColor: Colors.blue,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+
+        final uploadedAvatarUrl = await ExternalImageUploadService.uploadImageBytes(
+          bytes: _pendingAvatarBytes!,
+          fileName: 'avatar_${_currentUser!.id}.jpg',
+          productId: 'avatar_${_currentUser!.id}',
+        );
+
+        _avatarUrl = uploadedAvatarUrl;
+        _pendingAvatarBytes = null;
+      }
+
       final updatedUser = _currentUser!.copyWith(
         fullName: _fullNameController.text.trim(),
         email: _emailController.text.trim(),
@@ -320,6 +355,55 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
             content: Text('Profil güncellenirken hata oluştu: ${e.toString()}'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _pickAvatarImage() async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 1024,
+      );
+
+      if (picked == null) return;
+
+      final bytes = await picked.readAsBytes();
+      if (bytes.length > 5 * 1024 * 1024) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Dosya çok büyük. Maksimum 5MB olmalı.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      setState(() {
+        _pendingAvatarBytes = bytes;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Fotoğraf seçildi. Kaydet dediğinizde yüklenecek.'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Fotoğraf seçilemedi: $e'),
+            backgroundColor: Colors.red,
           ),
         );
       }
@@ -422,6 +506,7 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
         elevation: 0,
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: ResponsiveHelper.isMobile(context),
           labelColor: const Color(0xFF6366F1),
           unselectedLabelColor: Colors.grey,
           indicatorColor: const Color(0xFF6366F1),
@@ -449,7 +534,7 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
 
   Widget _buildProfileTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: ResponsiveHelper.responsivePadding(context),
       child: Form(
         key: _formKey,
         child: Column(
@@ -476,6 +561,14 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
   }
 
   Widget _buildProfileSummaryCard() {
+    final isMobile = ResponsiveHelper.isMobile(context);
+    ImageProvider? avatarProvider;
+    if (_pendingAvatarBytes != null && _pendingAvatarBytes!.isNotEmpty) {
+      avatarProvider = MemoryImage(_pendingAvatarBytes!);
+    } else if (_avatarUrl != null && _avatarUrl!.isNotEmpty) {
+      avatarProvider = NetworkImage(_avatarUrl!);
+    }
+
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -491,19 +584,23 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
           ),
           borderRadius: BorderRadius.circular(16),
         ),
-        padding: const EdgeInsets.all(32),
+        padding: ResponsiveHelper.responsivePadding(
+          context,
+          mobile: 16,
+          tablet: 20,
+          laptop: 28,
+          desktop: 32,
+        ),
         child: Column(
           children: [
             // Avatar
             Stack(
               children: [
                 CircleAvatar(
-                  radius: 50,
+                  radius: isMobile ? 42 : 50,
                   backgroundColor: Colors.white,
-                  backgroundImage: _avatarUrl != null && _avatarUrl!.isNotEmpty
-                      ? NetworkImage(_avatarUrl!)
-                      : null,
-                  child: _avatarUrl == null || _avatarUrl!.isEmpty
+                  backgroundImage: avatarProvider,
+                  child: avatarProvider == null
                       ? Text(
                           (_currentUser?.fullName.isNotEmpty == true
                               ? _currentUser!.fullName[0].toUpperCase()
@@ -519,14 +616,25 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
                 Positioned(
                   bottom: 0,
                   right: 0,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFF6366F1), width: 2),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _isSaving ? null : _pickAvatarImage,
+                      borderRadius: BorderRadius.circular(999),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0xFF6366F1), width: 2),
+                        ),
+                        child: Icon(
+                          Icons.camera_alt,
+                          color: const Color(0xFF6366F1),
+                          size: isMobile ? 16 : 18,
+                        ),
+                      ),
                     ),
-                    child: const Icon(Icons.camera_alt, color: Color(0xFF6366F1), size: 18),
                   ),
                 ),
               ],
@@ -692,6 +800,7 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
   }
 
   Widget _buildStatisticsCard() {
+    final isMobile = ResponsiveHelper.isMobile(context);
     return Card(
       elevation: 0,
       shape: RoundedRectangleBorder(
@@ -699,7 +808,7 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
         side: BorderSide(color: Colors.grey.withValues(alpha: 0.1)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: ResponsiveHelper.responsivePadding(context),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -724,49 +833,79 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
               ],
             ),
             const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatItem(
-                    'Yönetilen Ürün',
-                    '${_userStats['productsManaged'] ?? 0}',
-                    Icons.inventory_2_rounded,
-                    const Color(0xFF3B82F6),
+            if (isMobile) ...[
+              _buildStatItem(
+                'Yönetilen Ürün',
+                '${_userStats['productsManaged'] ?? 0}',
+                Icons.inventory_2_rounded,
+                const Color(0xFF3B82F6),
+              ),
+              const SizedBox(height: 12),
+              _buildStatItem(
+                'İşlenen Sipariş',
+                '${_userStats['ordersProcessed'] ?? 0}',
+                Icons.shopping_bag_rounded,
+                const Color(0xFF8B5CF6),
+              ),
+              const SizedBox(height: 12),
+              _buildStatItem(
+                'Aktif Ürün',
+                '${_userStats['activeProducts'] ?? 0}',
+                Icons.check_circle_rounded,
+                const Color(0xFF10B981),
+              ),
+              const SizedBox(height: 12),
+              _buildStatItem(
+                'Toplam Gelir',
+                '₺${((_userStats['totalRevenue'] ?? 0.0) as double).toStringAsFixed(0)}',
+                Icons.attach_money_rounded,
+                const Color(0xFFF59E0B),
+              ),
+            ] else ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildStatItem(
+                      'Yönetilen Ürün',
+                      '${_userStats['productsManaged'] ?? 0}',
+                      Icons.inventory_2_rounded,
+                      const Color(0xFF3B82F6),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildStatItem(
-                    'İşlenen Sipariş',
-                    '${_userStats['ordersProcessed'] ?? 0}',
-                    Icons.shopping_bag_rounded,
-                    const Color(0xFF8B5CF6),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildStatItem(
+                      'İşlenen Sipariş',
+                      '${_userStats['ordersProcessed'] ?? 0}',
+                      Icons.shopping_bag_rounded,
+                      const Color(0xFF8B5CF6),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStatItem(
-                    'Aktif Ürün',
-                    '${_userStats['activeProducts'] ?? 0}',
-                    Icons.check_circle_rounded,
-                    const Color(0xFF10B981),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildStatItem(
+                      'Aktif Ürün',
+                      '${_userStats['activeProducts'] ?? 0}',
+                      Icons.check_circle_rounded,
+                      const Color(0xFF10B981),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildStatItem(
-                    'Toplam Gelir',
-                    '₺${((_userStats['totalRevenue'] ?? 0.0) as double).toStringAsFixed(0)}',
-                    Icons.attach_money_rounded,
-                    const Color(0xFFF59E0B),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildStatItem(
+                      'Toplam Gelir',
+                      '₺${((_userStats['totalRevenue'] ?? 0.0) as double).toStringAsFixed(0)}',
+                      Icons.attach_money_rounded,
+                      const Color(0xFFF59E0B),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -913,7 +1052,7 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
 
   Widget _buildSecurityTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: ResponsiveHelper.responsivePadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1278,7 +1417,7 @@ class _WebAdminProfileState extends State<WebAdminProfile> with SingleTickerProv
 
   Widget _buildPreferencesTab() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: ResponsiveHelper.responsivePadding(context),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

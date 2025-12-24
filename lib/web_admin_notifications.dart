@@ -4,6 +4,7 @@ import 'services/notification_service.dart';
 import 'services/fcm_service.dart';
 import 'model/notification.dart';
 import 'web_admin_notification_history.dart';
+import 'utils/responsive_helper.dart';
 
 class WebAdminNotifications extends StatefulWidget {
   const WebAdminNotifications({super.key});
@@ -128,9 +129,15 @@ class _WebAdminNotificationsState extends State<WebAdminNotifications> {
         return GridView.count(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: isMobile ? 2 : 4,
-          crossAxisSpacing: 16,
-          mainAxisSpacing: 16,
+          crossAxisCount: ResponsiveHelper.responsiveColumns(
+            context,
+            mobile: 1,
+            tablet: 2,
+            laptop: 3,
+            desktop: 4,
+          ),
+          crossAxisSpacing: ResponsiveHelper.responsiveGridSpacing(context),
+          mainAxisSpacing: ResponsiveHelper.responsiveGridSpacing(context),
           childAspectRatio: isMobile ? 1.5 : 1.2,
           children: [
             _buildStatCard(

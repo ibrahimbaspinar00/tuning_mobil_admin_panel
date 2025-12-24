@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:flutter/foundation.dart';
-// Firebase Storage kaldırıldı - Base64 kullanılıyor
-import 'dart:html' as html;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'model/admin_product.dart';
 import 'services/admin_service.dart';
 import 'services/audit_log_service.dart';
 import 'services/permission_service.dart';
+import 'services/performance_service.dart';
 import 'widgets/professional_image_uploader.dart';
+import 'widgets/optimized_list_view.dart';
+import 'utils/responsive_helper.dart';
 
 class WebAdminSimpleProducts extends StatefulWidget {
   const WebAdminSimpleProducts({super.key});
@@ -27,42 +28,92 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
   String _sortOrder = 'asc';
   String _selectedCategory = 'Tümü';
   bool _showOnlyLowStock = false;
+  List<ProductCategory> _categories = [];
+  List<String> _availableCategories = ['Tümü'];
   
   // Pagination
   static const int _itemsPerPage = 20;
   int _currentPage = 0;
   bool _hasMore = true;
+  
+  // Bulk operations
+  Set<String> _selectedProductIds = {};
+  bool _isSelectionMode = false;
+  
+  // Performance optimizations
+  final Debouncer _searchDebouncer = Debouncer(delay: const Duration(milliseconds: 300));
+  final PerformanceService _performance = PerformanceService();
 
   @override
   void initState() {
     super.initState();
+    _loadCategories();
     _loadProducts();
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final categories = await _adminService.getCategories().first;
+      setState(() {
+        _categories = categories;
+        _updateCategoriesFromProducts();
+      });
+    } catch (e) {
+      debugPrint('Kategoriler yüklenirken hata: $e');
+    }
+  }
+
+  void _updateCategoriesFromProducts() {
+    final categorySet = <String>{'Tümü'};
+    // Firestore'dan gelen kategorileri ekle
+    for (final cat in _categories) {
+      categorySet.add(cat.name);
+    }
+    // Mevcut ürünlerden de kategorileri al (kategori sistemi olmayan ürünler için)
+    if (_products.isNotEmpty) {
+      final productCategories = _products.map((p) => p.category).where((c) => c.isNotEmpty).toSet();
+      categorySet.addAll(productCategories);
+    }
+    setState(() {
+      _availableCategories = categorySet.toList()..sort();
+    });
   }
 
   Future<void> _loadProducts() async {
     if (!mounted) return;
     
+    _performance.startOperation('loadProducts');
     setState(() {
       _isLoading = true;
     });
     
     try {
-      final products = await _adminService.getProducts().first;
+      // Cache kullanarak server-side fetch
+      final products = await _adminService.getProductsFromServer(useCache: true);
       if (mounted) {
         setState(() {
           _products = products;
           _filteredProducts = products;
           _isLoading = false;
         });
+        // Ürünler yüklendikten sonra kategorileri güncelle
+        _updateCategoriesFromProducts();
         _applyFilters();
+        _performance.endOperation('loadProducts');
       }
     } catch (e) {
+      _performance.endOperation('loadProducts');
+      debugPrint('❌ _loadProducts() hatası: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ürünler yüklenirken hata: $e')),
+          SnackBar(
+            content: Text('Ürünler yüklenirken hata: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     }
@@ -77,20 +128,40 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
           backgroundColor: Colors.blue[800],
           foregroundColor: Colors.white,
           actions: [
-            IconButton(
-              onPressed: _showFilterDialog,
-              icon: Icon(Icons.filter_list),
-              tooltip: 'Filtreler',
-            ),
-            IconButton(
-              onPressed: _showSortDialog,
-              icon: Icon(Icons.sort),
-              tooltip: 'Sırala',
-            ),
-            ElevatedButton(
-              onPressed: _showAddProductDialog,
-              child: const Text('Yeni Ürün'),
-            ),
+            if (_isSelectionMode) ...[
+              Text('${_selectedProductIds.length} seçili'),
+              const SizedBox(width: 8),
+              IconButton(
+                onPressed: _exitSelectionMode,
+                icon: const Icon(Icons.close),
+                tooltip: 'Seçimi İptal Et',
+              ),
+              IconButton(
+                onPressed: _selectedProductIds.isEmpty ? null : _showBulkActionsDialog,
+                icon: const Icon(Icons.more_vert),
+                tooltip: 'Toplu İşlemler',
+              ),
+            ] else ...[
+              IconButton(
+                onPressed: _enterSelectionMode,
+                icon: const Icon(Icons.checklist),
+                tooltip: 'Toplu Seçim',
+              ),
+              IconButton(
+                onPressed: _showFilterDialog,
+                icon: const Icon(Icons.filter_list),
+                tooltip: 'Filtreler',
+              ),
+              IconButton(
+                onPressed: _showSortDialog,
+                icon: const Icon(Icons.sort),
+                tooltip: 'Sırala',
+              ),
+              ElevatedButton(
+                onPressed: _showAddProductDialog,
+                child: const Text('Yeni Ürün'),
+              ),
+            ],
             const SizedBox(width: 16),
           ],
         ),
@@ -103,13 +174,16 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Arama çubuğu
+                  // Arama çubuğu - Debounced
                   TextField(
                     onChanged: (value) {
                       setState(() {
                         _searchQuery = value;
                       });
-                      _applyFilters();
+                      // Debounce ile filtreleme
+                      _searchDebouncer.call(() {
+                        _applyFilters();
+                      });
                     },
                     decoration: InputDecoration(
                       hintText: 'Ürün ara...',
@@ -132,6 +206,39 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
                       fillColor: Colors.white,
                     ),
                   ),
+                  
+                  // Kategori Filtreleme Çipleri
+                  if (_availableCategories.length > 1)
+                    Padding(
+                      padding: EdgeInsets.only(top: 12),
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: _availableCategories.map((category) {
+                            final isSelected = _selectedCategory == category;
+                            return Padding(
+                              padding: EdgeInsets.only(right: 8),
+                              child: FilterChip(
+                                label: Text(category),
+                                selected: isSelected,
+                                onSelected: (selected) {
+                                  setState(() {
+                                    _selectedCategory = category;
+                                  });
+                                  _applyFilters();
+                                },
+                                selectedColor: Colors.blue[200],
+                                checkmarkColor: Colors.blue[900],
+                                labelStyle: TextStyle(
+                                  color: isSelected ? Colors.blue[900] : Colors.grey[700],
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ),
                   
                   // Filtre bilgileri
                   if (_hasActiveFilters())
@@ -202,34 +309,38 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
                           ],
                         ),
                       )
-                    : ListView.builder(
-                        padding: EdgeInsets.all(16),
-                        itemCount: _displayedProducts.length + (_hasMore ? 1 : 0),
-                        itemBuilder: (context, index) {
-                          // Load more indicator
-                          if (index == _displayedProducts.length) {
-                            return Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(16),
-                                child: ElevatedButton(
-                                  onPressed: _loadMoreProducts,
-                                  child: Text('Daha Fazla Yükle (${_filteredProducts.length - _displayedProducts.length} kaldı)'),
-                                ),
-                              ),
-                            );
-                          }
-                          
-                          final product = _displayedProducts[index];
+                    : OptimizedListView<AdminProduct>(
+                        items: _displayedProducts,
+                        padding: const EdgeInsets.all(16),
+                        hasMore: _hasMore,
+                        onLoadMore: _loadMoreProducts,
+                        itemBuilder: (context, product, index) {
+                          final isSelected = _selectedProductIds.contains(product.id);
                           return Card(
-                            margin: EdgeInsets.only(bottom: 8),
+                            margin: const EdgeInsets.only(bottom: 8),
+                            color: isSelected ? Colors.blue[50] : null,
+                            key: ValueKey(product.id), // Widget rebuild optimizasyonu
                             child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: product.isActive ? Colors.green : Colors.red,
-                                child: Icon(
-                                  product.isActive ? Icons.check : Icons.close,
-                                  color: Colors.white,
-                                ),
-                              ),
+                              leading: _isSelectionMode
+                                  ? Checkbox(
+                                      value: isSelected,
+                                      onChanged: (value) {
+                                        setState(() {
+                                          if (value == true) {
+                                            _selectedProductIds.add(product.id);
+                                          } else {
+                                            _selectedProductIds.remove(product.id);
+                                          }
+                                        });
+                                      },
+                                    )
+                                  : CircleAvatar(
+                                      backgroundColor: product.isActive ? Colors.green : Colors.red,
+                                      child: Icon(
+                                        product.isActive ? Icons.check : Icons.close,
+                                        color: Colors.white,
+                                      ),
+                                    ),
                               title: Text(product.name),
                               subtitle: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -239,19 +350,21 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
                                   Text('Kategori: ${product.category}'),
                                 ],
                               ),
-                              trailing: PopupMenuButton<String>(
-                                onSelected: (value) {
-                                  if (value == 'edit') {
-                                    _showEditProductDialog(product);
-                                  } else if (value == 'delete') {
-                                    _showDeleteProductDialog(product);
-                                  }
-                                },
-                                itemBuilder: (context) => [
-                                  PopupMenuItem(value: 'edit', child: Text('Düzenle')),
-                                  PopupMenuItem(value: 'delete', child: Text('Sil')),
-                                ],
-                              ),
+                              trailing: _isSelectionMode
+                                  ? null
+                                  : PopupMenuButton<String>(
+                                      onSelected: (value) {
+                                        if (value == 'edit') {
+                                          _showEditProductDialog(product);
+                                        } else if (value == 'delete') {
+                                          _showDeleteProductDialog(product);
+                                        }
+                                      },
+                                      itemBuilder: (context) => [
+                                        const PopupMenuItem(value: 'edit', child: Text('Düzenle')),
+                                        const PopupMenuItem(value: 'delete', child: Text('Sil')),
+                                      ],
+                                    ),
                             ),
                           );
                         },
@@ -289,6 +402,7 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
   }
 
   void _applyFilters() {
+    _performance.startOperation('applyFilters');
     setState(() {
       _filteredProducts = _products.where((product) {
         // Arama filtresi
@@ -340,6 +454,7 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
       _currentPage = 0;
       _updateDisplayedProducts();
     });
+    _performance.endOperation('applyFilters');
   }
   
   void _updateDisplayedProducts() {
@@ -395,14 +510,16 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
             children: [
               // Kategori filtresi
               DropdownButtonFormField<String>(
-                initialValue: _selectedCategory,
+                value: _availableCategories.contains(_selectedCategory) 
+                    ? _selectedCategory 
+                    : 'Tümü',
                 decoration: InputDecoration(labelText: 'Kategori'),
-                items: [
-                  DropdownMenuItem(value: 'Tümü', child: Text('Tüm Kategoriler')),
-                  ..._products.map((p) => p.category).toSet().map((category) => 
-                    DropdownMenuItem(value: category, child: Text(category))
-                  ),
-                ],
+                items: _availableCategories.map((category) => 
+                  DropdownMenuItem(
+                    value: category,
+                    child: Text(category == 'Tümü' ? 'Tüm Kategoriler' : category),
+                  )
+                ).toList(),
                 onChanged: (value) {
                   setDialogState(() {
                     _selectedCategory = value!;
@@ -612,12 +729,12 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
   }
 
   Future<void> _deleteProduct(AdminProduct product) async {
-    try {
+try {
       await _adminService.deleteProduct(product.id);
       
-      // Audit log (hata olsa bile devam et)
+      // Audit log
       final userId = PermissionService.getCurrentUserId() ?? 'unknown';
-      AuditLogService.logAction(
+      await AuditLogService.logAction(
         userId: userId,
         action: 'delete',
         resource: 'product',
@@ -625,11 +742,7 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
           'productId': product.id,
           'productName': product.name,
         },
-      ).catchError((e) {
-        if (kDebugMode) {
-          debugPrint('Audit log hatası: $e');
-        }
-      });
+      );
       
       _loadProducts();
       if (mounted) {
@@ -643,6 +756,432 @@ class _WebAdminSimpleProductsState extends State<WebAdminSimpleProducts> {
           SnackBar(content: Text('Hata: $e')),
         );
       }
+    }
+  }
+
+  // Bulk operations
+  void _enterSelectionMode() {
+    setState(() {
+      _isSelectionMode = true;
+      _selectedProductIds.clear();
+    });
+  }
+
+  void _exitSelectionMode() {
+    setState(() {
+      _isSelectionMode = false;
+      _selectedProductIds.clear();
+    });
+  }
+
+  void _showBulkActionsDialog() {
+    if (_selectedProductIds.isEmpty) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Toplu İşlemler'),
+        content: Text('${_selectedProductIds.length} ürün seçildi. Ne yapmak istersiniz?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showBulkCategoryDialog();
+            },
+            child: const Text('Kategori Değiştir'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showBulkPriceDialog();
+            },
+            child: const Text('Fiyat Güncelle'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showBulkStockDialog();
+            },
+            child: const Text('Stok Güncelle'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showBulkStatusDialog();
+            },
+            child: const Text('Durum Değiştir'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showBulkDeleteDialog();
+            },
+            child: const Text('Sil', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showBulkCategoryDialog() {
+    String? selectedCategory;
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Toplu Kategori Değiştir'),
+          content: DropdownButtonFormField<String>(
+            value: selectedCategory,
+            decoration: const InputDecoration(labelText: 'Yeni Kategori'),
+            items: _availableCategories.where((c) => c != 'Tümü').map((cat) {
+              return DropdownMenuItem(value: cat, child: Text(cat));
+            }).toList(),
+            onChanged: (value) => setState(() => selectedCategory = value),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('İptal'),
+            ),
+            ElevatedButton(
+              onPressed: selectedCategory == null
+                  ? null
+                  : () async {
+                      await _bulkUpdateCategory(selectedCategory!);
+                      Navigator.pop(context);
+                    },
+              child: const Text('Güncelle'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBulkPriceDialog() {
+    final priceController = TextEditingController();
+    String priceType = 'set'; // 'set', 'increase', 'decrease'
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Toplu Fiyat Güncelle'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: priceType,
+                decoration: const InputDecoration(labelText: 'İşlem Tipi'),
+                items: const [
+                  DropdownMenuItem(value: 'set', child: Text('Belirli Fiyat')),
+                  DropdownMenuItem(value: 'increase', child: Text('Artır (%)')),
+                  DropdownMenuItem(value: 'decrease', child: Text('Azalt (%)')),
+                ],
+                onChanged: (value) => setState(() => priceType = value!),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: priceController,
+                decoration: InputDecoration(
+                  labelText: priceType == 'set' ? 'Yeni Fiyat (₺)' : 'Yüzde',
+                  prefixIcon: const Icon(Icons.attach_money),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('İptal'),
+            ),
+            ElevatedButton(
+              onPressed: priceController.text.isEmpty
+                  ? null
+                  : () async {
+                      await _bulkUpdatePrice(priceType, priceController.text);
+                      Navigator.pop(context);
+                    },
+              child: const Text('Güncelle'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBulkStockDialog() {
+    final stockController = TextEditingController();
+    String stockType = 'set'; // 'set', 'increase', 'decrease'
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Toplu Stok Güncelle'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<String>(
+                value: stockType,
+                decoration: const InputDecoration(labelText: 'İşlem Tipi'),
+                items: const [
+                  DropdownMenuItem(value: 'set', child: Text('Belirli Stok')),
+                  DropdownMenuItem(value: 'increase', child: Text('Artır')),
+                  DropdownMenuItem(value: 'decrease', child: Text('Azalt')),
+                ],
+                onChanged: (value) => setState(() => stockType = value!),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: stockController,
+                decoration: const InputDecoration(
+                  labelText: 'Miktar',
+                  prefixIcon: Icon(Icons.inventory),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('İptal'),
+            ),
+            ElevatedButton(
+              onPressed: stockController.text.isEmpty
+                  ? null
+                  : () async {
+                      await _bulkUpdateStock(stockType, stockController.text);
+                      Navigator.pop(context);
+                    },
+              child: const Text('Güncelle'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBulkStatusDialog() {
+    bool? newStatus;
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Toplu Durum Değiştir'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              RadioListTile<bool>(
+                title: const Text('Aktif'),
+                value: true,
+                groupValue: newStatus,
+                onChanged: (value) => setState(() => newStatus = value),
+              ),
+              RadioListTile<bool>(
+                title: const Text('Pasif'),
+                value: false,
+                groupValue: newStatus,
+                onChanged: (value) => setState(() => newStatus = value),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('İptal'),
+            ),
+            ElevatedButton(
+              onPressed: newStatus == null
+                  ? null
+                  : () async {
+                      await _bulkUpdateStatus(newStatus!);
+                      Navigator.pop(context);
+                    },
+              child: const Text('Güncelle'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBulkDeleteDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Toplu Silme'),
+        content: Text('${_selectedProductIds.length} ürün silinecek. Emin misiniz?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('İptal'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await _bulkDelete();
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Sil'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _bulkUpdateCategory(String category) async {
+    int successCount = 0;
+    int failCount = 0;
+
+    for (final productId in _selectedProductIds) {
+      try {
+        await _adminService.updateProductFields(productId, {'category': category});
+        successCount++;
+      } catch (e) {
+        failCount++;
+        debugPrint('Ürün kategori güncelleme hatası ($productId): $e');
+      }
+    }
+
+    _loadProducts();
+    _exitSelectionMode();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$successCount ürün güncellendi. ${failCount > 0 ? "$failCount hata." : ""}'),
+          backgroundColor: failCount > 0 ? Colors.orange : Colors.green,
+        ),
+      );
+    }
+  }
+
+  Future<void> _bulkUpdatePrice(String type, String value) async {
+    final numValue = double.tryParse(value);
+    if (numValue == null) return;
+
+    int successCount = 0;
+    int failCount = 0;
+
+    for (final productId in _selectedProductIds) {
+      try {
+        final product = _products.firstWhere((p) => p.id == productId);
+        double newPrice;
+        if (type == 'set') {
+          newPrice = numValue;
+        } else if (type == 'increase') {
+          newPrice = product.price * (1 + numValue / 100);
+        } else {
+          newPrice = product.price * (1 - numValue / 100);
+        }
+        await _adminService.updateProductFields(productId, {'price': newPrice});
+        successCount++;
+      } catch (e) {
+        failCount++;
+        debugPrint('Ürün fiyat güncelleme hatası ($productId): $e');
+      }
+    }
+
+    _loadProducts();
+    _exitSelectionMode();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$successCount ürün güncellendi. ${failCount > 0 ? "$failCount hata." : ""}'),
+          backgroundColor: failCount > 0 ? Colors.orange : Colors.green,
+        ),
+      );
+    }
+  }
+
+  Future<void> _bulkUpdateStock(String type, String value) async {
+    final numValue = int.tryParse(value);
+    if (numValue == null) return;
+
+    int successCount = 0;
+    int failCount = 0;
+
+    for (final productId in _selectedProductIds) {
+      try {
+        if (type == 'set') {
+          await _adminService.updateStock(productId, numValue);
+        } else if (type == 'increase') {
+          await _adminService.increaseStock(productId, numValue);
+        } else {
+          await _adminService.decreaseStock(productId, numValue);
+        }
+        successCount++;
+      } catch (e) {
+        failCount++;
+        debugPrint('Ürün stok güncelleme hatası ($productId): $e');
+      }
+    }
+
+    _loadProducts();
+    _exitSelectionMode();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$successCount ürün güncellendi. ${failCount > 0 ? "$failCount hata." : ""}'),
+          backgroundColor: failCount > 0 ? Colors.orange : Colors.green,
+        ),
+      );
+    }
+  }
+
+  Future<void> _bulkUpdateStatus(bool isActive) async {
+    int successCount = 0;
+    int failCount = 0;
+
+    for (final productId in _selectedProductIds) {
+      try {
+        await _adminService.toggleProductStatus(productId, isActive);
+        successCount++;
+      } catch (e) {
+        failCount++;
+        debugPrint('Ürün durum güncelleme hatası ($productId): $e');
+      }
+    }
+
+    _loadProducts();
+    _exitSelectionMode();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$successCount ürün güncellendi. ${failCount > 0 ? "$failCount hata." : ""}'),
+          backgroundColor: failCount > 0 ? Colors.orange : Colors.green,
+        ),
+      );
+    }
+  }
+
+  Future<void> _bulkDelete() async {
+    int successCount = 0;
+    int failCount = 0;
+
+    for (final productId in _selectedProductIds) {
+      try {
+        await _adminService.deleteProduct(productId);
+        successCount++;
+      } catch (e) {
+        failCount++;
+        debugPrint('Ürün silme hatası ($productId): $e');
+      }
+    }
+
+    _loadProducts();
+    _exitSelectionMode();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$successCount ürün silindi. ${failCount > 0 ? "$failCount hata." : ""}'),
+          backgroundColor: failCount > 0 ? Colors.orange : Colors.green,
+        ),
+      );
     }
   }
 }
@@ -665,22 +1204,74 @@ class _ProductDialogState extends State<_ProductDialog> {
   final _nameController = TextEditingController();
   final _priceController = TextEditingController();
   final _stockController = TextEditingController();
-  final _categoryController = TextEditingController();
   final _descriptionController = TextEditingController();
   
   String? _uploadedImageUrl;
   final GlobalKey<ProfessionalImageUploaderState> _imageUploaderKey = GlobalKey();
+  String? _selectedCategory;
+  List<String> _allCategoryNames = [];
+  final AdminService _adminService = AdminService();
 
   @override
   void initState() {
     super.initState();
+    _loadCategories();
     if (widget.product != null) {
       _nameController.text = widget.product!.name;
       _priceController.text = widget.product!.price.toString();
       _stockController.text = widget.product!.stock.toString();
-      _categoryController.text = widget.product!.category;
+      _selectedCategory = widget.product!.category;
       _descriptionController.text = widget.product!.description;
       _uploadedImageUrl = widget.product!.imageUrl.isNotEmpty ? widget.product!.imageUrl : null;
+    }
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      // Firestore'dan TÜM kategorileri çek (aktif ve pasif)
+      final allCategories = await _adminService.getAllCategories().first;
+      
+      // Mevcut ürünlerden de kategorileri al
+      final allProducts = await _adminService.getProductsFromServer();
+      final productCategories = allProducts
+          .map((p) => p.category)
+          .where((c) => c.isNotEmpty)
+          .toSet()
+          .toList();
+      
+      setState(() {
+        // Tüm kategori isimlerini birleştir
+        _allCategoryNames = [];
+        
+        // Firestore'dan gelen TÜM kategorileri ekle (aktif ve pasif)
+        for (final cat in allCategories) {
+          if (!_allCategoryNames.contains(cat.name)) {
+            _allCategoryNames.add(cat.name);
+          }
+        }
+        
+        // Ürünlerden gelen kategorileri de ekle (Firestore'da olmayanlar için)
+        for (final catName in productCategories) {
+          if (!_allCategoryNames.contains(catName)) {
+            _allCategoryNames.add(catName);
+          }
+        }
+        
+        // Alfabetik sırala
+        _allCategoryNames.sort();
+        
+        // Seçili kategori listede yoksa null yap (silinen kategori olabilir)
+        if (_selectedCategory != null && !_allCategoryNames.contains(_selectedCategory)) {
+          _selectedCategory = null;
+        }
+        
+        // Eğer seçili kategori yoksa ve kategoriler varsa ilkini seç
+        if (_selectedCategory == null && _allCategoryNames.isNotEmpty) {
+          _selectedCategory = _allCategoryNames.first;
+        }
+      });
+    } catch (e) {
+      debugPrint('Kategoriler yüklenirken hata: $e');
     }
   }
 
@@ -689,27 +1280,15 @@ class _ProductDialogState extends State<_ProductDialog> {
     _nameController.dispose();
     _priceController.dispose();
     _stockController.dispose();
-    _categoryController.dispose();
     _descriptionController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-    
-    // Responsive dialog genişliği
-    final dialogWidth = screenWidth > 800 
-        ? 600.0 
-        : screenWidth > 600 
-            ? screenWidth * 0.85 
-            : screenWidth * 0.95;
-    
-    // Responsive dialog yüksekliği
-    final dialogHeight = screenHeight > 800 
-        ? 700.0 
-        : screenHeight * 0.85;
+    // Responsive dialog genişliği ve yüksekliği
+    final dialogWidth = ResponsiveHelper.responsiveDialogWidth(context);
+    final dialogHeight = ResponsiveHelper.responsiveDialogHeight(context);
     
     return Dialog(
       shape: RoundedRectangleBorder(
@@ -776,7 +1355,7 @@ class _ProductDialogState extends State<_ProductDialog> {
                         initialImageUrl: _uploadedImageUrl,
                         productId: widget.product?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
                         aspectRatio: 1.0, // Kare format
-                        autoUpload: true, // Otomatik yükleme - resim seçildiğinde direkt yüklenir
+                        autoUpload: false, // Upload "Kaydet" sırasında yapılacak
                         onImageUploaded: (imageUrl) {
                           setState(() {
                             _uploadedImageUrl = imageUrl;
@@ -834,15 +1413,51 @@ class _ProductDialogState extends State<_ProductDialog> {
                         ],
                       ),
                       const SizedBox(height: 16),
-                      TextFormField(
-                        controller: _categoryController,
-                        decoration: const InputDecoration(
-                          labelText: 'Kategori',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.category),
-                        ),
-                        validator: (value) => value?.isEmpty == true ? 'Kategori gerekli' : null,
-                      ),
+                      _allCategoryNames.isEmpty
+                        ? TextFormField(
+                            initialValue: _selectedCategory ?? '',
+                            decoration: const InputDecoration(
+                              labelText: 'Kategori',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.category),
+                              hintText: 'Kategori adı girin',
+                              helperText: 'Kategoriler yükleniyor...',
+                            ),
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedCategory = value;
+                              });
+                            },
+                            validator: (value) => value?.isEmpty == true ? 'Kategori gerekli' : null,
+                          )
+                        : DropdownButtonFormField<String>(
+                            value: _selectedCategory != null && _allCategoryNames.contains(_selectedCategory) 
+                                ? _selectedCategory 
+                                : null,
+                            decoration: const InputDecoration(
+                              labelText: 'Kategori',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.category),
+                              helperText: 'Kategori seçiniz',
+                            ),
+                            isExpanded: true,
+                            items: _allCategoryNames.map((categoryName) {
+                              return DropdownMenuItem<String>(
+                                value: categoryName,
+                                child: Text(
+                                  categoryName,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                _selectedCategory = value;
+                              });
+                            },
+                            validator: (value) => value == null || value.isEmpty ? 'Kategori seçiniz' : null,
+                            menuMaxHeight: 300,
+                          ),
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: _descriptionController,
@@ -892,21 +1507,6 @@ class _ProductDialogState extends State<_ProductDialog> {
         ),
       ),
     );
-  }
-
-  // Firebase Storage kaldırıldı - artık ProfessionalImageUploader Base64 kullanıyor
-  // Bu metod artık kullanılmıyor
-  @Deprecated('Firebase Storage kaldırıldı. ProfessionalImageUploader widget\'ını kullanın.')
-  Future<String> _uploadWebImage(html.File file, String productId) async {
-    throw UnimplementedError('Firebase Storage kaldırıldı. ProfessionalImageUploader widget\'ını kullanın.');
-    /* Eski kod - artık kullanılmıyor
-    try {
-      debugPrint('📤 Firebase Storage\'a yükleniyor...');
-      debugPrint('Dosya adı: ${file.name}, Boyut: ${file.size} bytes, Tip: ${file.type}');
-      
-      // Firebase Storage instance'ı kontrol et
-      final storage = FirebaseStorage.instance;
-      */
   }
 
   void _saveProduct() async {
@@ -961,7 +1561,7 @@ class _ProductDialogState extends State<_ProductDialog> {
         description: _descriptionController.text,
         price: double.parse(_priceController.text),
         stock: int.parse(_stockController.text),
-        category: _categoryController.text,
+        category: _selectedCategory ?? '',
         imageUrl: finalImageUrl,
         isActive: widget.product?.isActive ?? true,
         createdAt: widget.product?.createdAt ?? DateTime.now(),

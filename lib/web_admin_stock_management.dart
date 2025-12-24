@@ -34,7 +34,8 @@ class _WebAdminStockManagementState extends State<WebAdminStockManagement> {
     });
     
     try {
-      final products = await _adminService.getProducts().first;
+      // Server-side fetch kullan (cache bypass) - Web uygulaması için kritik
+      final products = await _adminService.getProductsFromServer();
       if (mounted) {
         setState(() {
           _products = products;
@@ -49,7 +50,11 @@ class _WebAdminStockManagementState extends State<WebAdminStockManagement> {
           _isLoading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ürünler yüklenirken hata: $e')),
+          SnackBar(
+            content: Text('Ürünler yüklenirken hata: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
         );
       }
     }
@@ -77,10 +82,13 @@ class _WebAdminStockManagementState extends State<WebAdminStockManagement> {
             tooltip: 'Sırala',
           ),
           DropdownButton<String>(
-            value: _selectedCategory,
+            value: () {
+              final availableCategories = ['Tümü', ..._products.map((p) => p.category).where((c) => c.isNotEmpty).toSet()];
+              return availableCategories.contains(_selectedCategory) ? _selectedCategory : 'Tümü';
+            }(),
             items: [
               DropdownMenuItem(value: 'Tümü', child: Text('Tüm Kategoriler')),
-              ..._products.map((p) => p.category).toSet().map((category) => 
+              ..._products.map((p) => p.category).where((c) => c.isNotEmpty).toSet().map((category) => 
                 DropdownMenuItem(value: category, child: Text(category))
               ),
             ],
