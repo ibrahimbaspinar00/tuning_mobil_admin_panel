@@ -134,7 +134,20 @@ Build çıktısı `build/web/` klasöründe olacaktır.
 
 ## 📦 Deployment
 
-### Firebase Hosting ile Yayınlama
+### 🆓 GitHub Pages (Ücretsiz - Önerilen)
+
+Proje GitHub Pages için hazırlanmıştır! Tamamen ücretsiz hosting.
+
+**Kurulum:**
+1. Repository → **Settings** → **Pages**
+2. **Source** olarak **GitHub Actions** seçin
+3. Her push'ta otomatik deploy olacak!
+
+**Site URL:** `https://ibrahimbaspinar00.github.io/tuning_mobil_admin_panel/`
+
+Detaylı rehber için: [GITHUB_PAGES_SETUP.md](GITHUB_PAGES_SETUP.md)
+
+### Firebase Hosting (Alternatif)
 
 1. Firebase CLI'yi yükleyin:
 
@@ -148,27 +161,16 @@ npm install -g firebase-tools
 firebase login
 ```
 
-3. Firebase projenizi başlatın:
-
-```bash
-firebase init hosting
-```
-
-4. Build alın:
+3. Build alın ve deploy edin:
 
 ```bash
 flutter build web --release
-```
-
-5. Deploy edin:
-
-```bash
 firebase deploy --only hosting
 ```
 
 ### GitHub Actions ile Otomatik Deployment
 
-Proje GitHub Actions ile otomatik deployment desteği içerir. `.github/workflows/deploy.yml` dosyasını kullanarak her push'ta otomatik deploy yapabilirsiniz.
+Proje GitHub Actions ile otomatik deployment desteği içerir. `.github/workflows/deploy.yml` dosyası GitHub Pages için yapılandırılmıştır.
 
 ## 🔐 Güvenlik
 
