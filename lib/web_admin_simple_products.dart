@@ -1188,7 +1188,7 @@ try {
 
 class _ProductDialog extends StatefulWidget {
   final AdminProduct? product;
-  final Function(AdminProduct) onSave;
+  final Future<void> Function(AdminProduct) onSave;
 
   const _ProductDialog({
     this.product,
@@ -1211,6 +1211,7 @@ class _ProductDialogState extends State<_ProductDialog> {
   String? _selectedCategory;
   List<String> _allCategoryNames = [];
   final AdminService _adminService = AdminService();
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -1492,13 +1493,22 @@ class _ProductDialogState extends State<_ProductDialog> {
                   ),
                   const SizedBox(width: 12),
                   ElevatedButton(
-                    onPressed: _saveProduct,
+                    onPressed: _isSaving ? null : _saveProduct,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.purple[600],
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                     ),
-                    child: const Text('Kaydet'),
+                    child: _isSaving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Text('Kaydet'),
                   ),
                 ],
               ),
@@ -1510,7 +1520,15 @@ class _ProductDialogState extends State<_ProductDialog> {
   }
 
   void _saveProduct() async {
-    if (_formKey.currentState!.validate()) {
+    if (!_formKey.currentState!.validate() || _isSaving) {
+      return;
+    }
+
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
       // Fotoğraf yüklenmemişse önce yükle
       String finalImageUrl = _uploadedImageUrl ?? '';
       
@@ -1547,6 +1565,9 @@ class _ProductDialogState extends State<_ProductDialog> {
                 ),
               );
             }
+            setState(() {
+              _isSaving = false;
+            });
             return; // Hata varsa kaydetme
           }
         } else if (uploaderState.uploadedImageUrl != null) {
@@ -1554,23 +1575,69 @@ class _ProductDialogState extends State<_ProductDialog> {
         }
       }
       
+      // Fiyat parse işlemi - Türkçe format desteği (2.519,99 -> 2519.99)
+      String priceText = _priceController.text.trim();
+      // Binlik ayırıcı noktaları kaldır, virgülü noktaya çevir
+      priceText = priceText.replaceAll('.', '').replaceAll(',', '.');
+      final price = double.tryParse(priceText);
+      if (price == null || price <= 0) {
+        throw Exception('Geçerli bir fiyat giriniz');
+      }
+
+      // Stok parse işlemi
+      final stock = int.tryParse(_stockController.text.trim());
+      if (stock == null || stock < 0) {
+        throw Exception('Geçerli bir stok miktarı giriniz');
+      }
+
+      // Kategori kontrolü
+      if (_selectedCategory == null || _selectedCategory!.isEmpty) {
+        throw Exception('Lütfen bir kategori seçiniz');
+      }
+      
       // Ürün oluştur ve kaydet
       final product = AdminProduct(
         id: widget.product?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
-        name: _nameController.text,
-        description: _descriptionController.text,
-        price: double.parse(_priceController.text),
-        stock: int.parse(_stockController.text),
-        category: _selectedCategory ?? '',
+        name: _nameController.text.trim(),
+        description: _descriptionController.text.trim(),
+        price: price,
+        stock: stock,
+        category: _selectedCategory!,
         imageUrl: finalImageUrl,
         isActive: widget.product?.isActive ?? true,
         createdAt: widget.product?.createdAt ?? DateTime.now(),
         updatedAt: DateTime.now(),
       );
       
-      widget.onSave(product);
+      // Ürünü kaydet (await ile)
+      await widget.onSave(product);
+      
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Ürün başarıyla kaydedildi'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
         Navigator.pop(context);
+      }
+    } catch (e) {
+      debugPrint('Ürün kaydetme hatası: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Ürün kaydedilirken hata: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
       }
     }
   }
