@@ -24,6 +24,7 @@ import 'widgets/dashboard_charts.dart';
 import 'widgets/global_search.dart';
 import 'web_admin_campaigns.dart';
 import 'web_admin_advanced_reports.dart';
+import 'web_admin_product_analytics.dart';
 
 class WebAdminDashboard extends StatefulWidget {
   const WebAdminDashboard({super.key});
@@ -277,6 +278,7 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
       {'isDivider': true, 'title': 'SİPARİŞLER'},
       {'isDivider': false, 'index': 4, 'icon': Icons.shopping_bag_rounded, 'title': 'Siparişler', 'color': null},
       {'isDivider': false, 'index': 13, 'icon': Icons.star_rounded, 'title': 'En Çok Alışveriş Yapanlar', 'color': null},
+      {'isDivider': false, 'index': 17, 'icon': Icons.analytics_rounded, 'title': 'Ürün Analitikleri', 'color': null},
       {'isDivider': true, 'title': 'YÖNETİM'},
       {'isDivider': false, 'index': 11, 'icon': Icons.manage_accounts_rounded, 'title': 'Kullanıcı Yönetim Paneli', 'color': null},
       if (PermissionService.canViewUsers())
@@ -604,6 +606,7 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
       '', // Index 14: Arama (başlık gösterilmeyecek)
       'Kampanyalar',
       'Gelişmiş Raporlar',
+      'Ürün Analitikleri',
     ];
     if (_selectedIndex < titles.length) {
       return titles[_selectedIndex];
@@ -843,6 +846,8 @@ class _WebAdminDashboardState extends State<WebAdminDashboard> {
         return PermissionService.canViewReports() 
             ? const WebAdminAdvancedReports() 
             : _buildAccessDeniedPage('Gelişmiş Raporlar');
+      case 17:
+        return const WebAdminProductAnalytics();
       default:
         return const WebDashboardHome();
     }

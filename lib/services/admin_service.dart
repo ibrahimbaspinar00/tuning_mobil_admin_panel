@@ -1430,4 +1430,266 @@ class AdminService {
     }
   }
 
+  // En çok favorilenen ürünleri getir
+  Future<List<Map<String, dynamic>>> getMostFavoritedProducts({int limit = 20}) async {
+    _performance.startOperation('getMostFavoritedProducts');
+    try {
+      final Map<String, int> favoriteCounts = {};
+      int totalUsers = 0;
+      int totalFavorites = 0;
+      
+      debugPrint('🔍 Favori ürünleri analiz ediliyor...');
+      
+      // Tüm kullanıcıların favorilerini topla
+      final usersSnapshot = await _firestore.collection('users').get();
+      totalUsers = usersSnapshot.docs.length;
+      debugPrint('   - Toplam kullanıcı sayısı: $totalUsers');
+      
+      for (final userDoc in usersSnapshot.docs) {
+        try {
+          final favoritesSnapshot = await _firestore
+              .collection('users')
+              .doc(userDoc.id)
+              .collection('favorites')
+              .get();
+          
+          totalFavorites += favoritesSnapshot.docs.length;
+          
+          for (final favoriteDoc in favoritesSnapshot.docs) {
+            final data = favoriteDoc.data();
+            
+            // Farklı formatları dene
+            String? productId = data['productId'] as String?;
+            if (productId == null || productId.isEmpty) {
+              productId = data['id'] as String?;
+            }
+            if (productId == null || productId.isEmpty) {
+              productId = data['product'] as String?;
+            }
+            if (productId == null || productId.isEmpty) {
+              // Document ID'yi dene
+              productId = favoriteDoc.id;
+            }
+            
+            // Eğer hala boşsa, tüm veriyi logla
+            if (productId.isEmpty) {
+              debugPrint('⚠️ Favori verisi formatı beklenmedik: ${data.keys}');
+              continue;
+            }
+            
+            favoriteCounts[productId] = (favoriteCounts[productId] ?? 0) + 1;
+          }
+        } catch (e) {
+          debugPrint('⚠️ Kullanıcı favorileri okunurken hata (${userDoc.id}): $e');
+          continue;
+        }
+      }
+      
+      debugPrint('   - Toplam favori sayısı: $totalFavorites');
+      debugPrint('   - Benzersiz ürün sayısı: ${favoriteCounts.length}');
+      
+      // Ürün bilgilerini al
+      final products = await getProductsFromServer(useCache: false);
+      final Map<String, AdminProduct> productMap = {};
+      for (final product in products) {
+        productMap[product.id] = product;
+      }
+      
+      // Sonuçları hazırla
+      final List<Map<String, dynamic>> result = [];
+      final sortedFavorites = favoriteCounts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      
+      for (final entry in sortedFavorites.take(limit)) {
+        final product = productMap[entry.key];
+        if (product != null) {
+          result.add({
+            'productId': product.id,
+            'productName': product.name,
+            'productImage': product.imageUrl,
+            'productPrice': product.price,
+            'productCategory': product.category,
+            'favoriteCount': entry.value,
+            'product': product,
+          });
+        }
+      }
+      
+      _performance.endOperation('getMostFavoritedProducts');
+      return result;
+    } catch (e) {
+      _performance.endOperation('getMostFavoritedProducts');
+      debugPrint('❌ getMostFavoritedProducts() hatası: $e');
+      return [];
+    }
+  }
+
+  // En çok sepete eklenen ürünleri getir
+  Future<List<Map<String, dynamic>>> getMostAddedToCartProducts({int limit = 20}) async {
+    _performance.startOperation('getMostAddedToCartProducts');
+    try {
+      final Map<String, int> cartCounts = {}; // Toplam ekleme sayısı
+      final Map<String, int> cartQuantities = {}; // Toplam miktar
+      int totalUsers = 0;
+      int totalCartItems = 0;
+      
+      debugPrint('🔍 Sepet ürünleri analiz ediliyor...');
+      
+      // Tüm kullanıcıların sepetlerini topla
+      final usersSnapshot = await _firestore.collection('users').get();
+      totalUsers = usersSnapshot.docs.length;
+      debugPrint('   - Toplam kullanıcı sayısı: $totalUsers');
+      
+      for (final userDoc in usersSnapshot.docs) {
+        try {
+          final cartSnapshot = await _firestore
+              .collection('users')
+              .doc(userDoc.id)
+              .collection('cart')
+              .get();
+          
+          totalCartItems += cartSnapshot.docs.length;
+          
+          for (final cartDoc in cartSnapshot.docs) {
+            final data = cartDoc.data();
+            
+            // Farklı formatları dene
+            String? productId = data['productId'] as String?;
+            if (productId == null || productId.isEmpty) {
+              productId = data['id'] as String?;
+            }
+            if (productId == null || productId.isEmpty) {
+              productId = data['product'] as String?;
+            }
+            if (productId == null || productId.isEmpty) {
+              // Document ID'yi dene
+              productId = cartDoc.id;
+            }
+            
+            final quantity = (data['quantity'] as num?)?.toInt() ?? 
+                           (data['qty'] as num?)?.toInt() ?? 
+                           1;
+            
+            // Eğer hala boşsa, tüm veriyi logla
+            if (productId.isEmpty) {
+              debugPrint('⚠️ Sepet verisi formatı beklenmedik: ${data.keys}');
+              continue;
+            }
+            
+            cartCounts[productId] = (cartCounts[productId] ?? 0) + 1;
+            cartQuantities[productId] = (cartQuantities[productId] ?? 0) + quantity;
+          }
+        } catch (e) {
+          debugPrint('⚠️ Kullanıcı sepeti okunurken hata (${userDoc.id}): $e');
+          continue;
+        }
+      }
+      
+      debugPrint('   - Toplam sepet öğesi sayısı: $totalCartItems');
+      debugPrint('   - Benzersiz ürün sayısı: ${cartCounts.length}');
+      
+      // Ürün bilgilerini al
+      final products = await getProductsFromServer(useCache: false);
+      final Map<String, AdminProduct> productMap = {};
+      for (final product in products) {
+        productMap[product.id] = product;
+      }
+      
+      // Sonuçları hazırla (ekleme sayısına göre sırala)
+      final List<Map<String, dynamic>> result = [];
+      final sortedCart = cartCounts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      
+      for (final entry in sortedCart.take(limit)) {
+        final product = productMap[entry.key];
+        if (product != null) {
+          result.add({
+            'productId': product.id,
+            'productName': product.name,
+            'productImage': product.imageUrl,
+            'productPrice': product.price,
+            'productCategory': product.category,
+            'cartAddCount': entry.value, // Kaç kez sepete eklendi
+            'totalCartQuantity': cartQuantities[entry.key] ?? 0, // Toplam sepetteki miktar
+            'product': product,
+          });
+        }
+      }
+      
+      _performance.endOperation('getMostAddedToCartProducts');
+      return result;
+    } catch (e) {
+      _performance.endOperation('getMostAddedToCartProducts');
+      debugPrint('❌ getMostAddedToCartProducts() hatası: $e');
+      return [];
+    }
+  }
+
+  // En çok satılan ürünleri getir (siparişlerden)
+  Future<List<Map<String, dynamic>>> getTopSellingProducts({int limit = 20}) async {
+    _performance.startOperation('getTopSellingProducts');
+    try {
+      final Map<String, Map<String, dynamic>> productSales = {};
+      
+      // Tüm siparişleri al
+      final orders = await getOrders().first;
+      
+      for (final order in orders) {
+        for (final product in order.products) {
+          final productId = product.id;
+          
+          if (!productSales.containsKey(productId)) {
+            productSales[productId] = {
+              'productId': productId,
+              'productName': product.name,
+              'quantity': 0,
+              'revenue': 0.0,
+            };
+          }
+          
+          productSales[productId]!['quantity'] = 
+              (productSales[productId]!['quantity'] as int) + product.quantity;
+          productSales[productId]!['revenue'] = 
+              (productSales[productId]!['revenue'] as double) + (product.price * product.quantity);
+        }
+      }
+      
+      // Ürün bilgilerini al
+      final products = await getProductsFromServer(useCache: false);
+      final Map<String, AdminProduct> productMap = {};
+      for (final product in products) {
+        productMap[product.id] = product;
+      }
+      
+      // Sonuçları hazırla (satış miktarına göre sırala)
+      final List<Map<String, dynamic>> result = [];
+      final sortedSales = productSales.values.toList()
+        ..sort((a, b) => (b['quantity'] as int).compareTo(a['quantity'] as int));
+      
+      for (final sale in sortedSales.take(limit)) {
+        final productId = sale['productId'] as String;
+        final product = productMap[productId];
+        if (product != null) {
+          result.add({
+            'productId': product.id,
+            'productName': product.name,
+            'productImage': product.imageUrl,
+            'productPrice': product.price,
+            'productCategory': product.category,
+            'quantity': sale['quantity'] as int,
+            'revenue': sale['revenue'] as double,
+            'product': product,
+          });
+        }
+      }
+      
+      _performance.endOperation('getTopSellingProducts');
+      return result;
+    } catch (e) {
+      _performance.endOperation('getTopSellingProducts');
+      debugPrint('❌ getTopSellingProducts() hatası: $e');
+      return [];
+    }
+  }
+
 }

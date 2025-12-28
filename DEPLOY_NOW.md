@@ -20,6 +20,8 @@ Projeniz başarıyla GitHub'a yüklendi:
 GitHub Actions workflow'u zaten hazır! Her push'ta otomatik olarak:
 - ✅ Flutter web build alınacak
 - ✅ GitHub Pages'e deploy edilecek
+- ✅ Firestore Rules deploy edilecek (FIREBASE_TOKEN varsa)
+- ✅ Firebase Hosting'e deploy edilecek (FIREBASE_TOKEN varsa)
 
 ### Adım 3: İlk Deployment
 
@@ -92,9 +94,15 @@ Bu URL'yi tarayıcıda açarak admin panelinizi görebilirsiniz!
    - DNS ayarlarını yapın
 
 2. **GitHub Actions (Otomatik Deploy):**
-   - GitHub Repository → Settings → Secrets
-   - `FIREBASE_SERVICE_ACCOUNT` ve `FIREBASE_PROJECT_ID` ekleyin
-   - Her push'ta otomatik deploy olacak!
+   - GitHub Repository → Settings → Secrets and variables → Actions
+   - `FIREBASE_TOKEN` secret'ını ekleyin (Firebase token almak için: `firebase login:ci`)
+   - Her push'ta otomatik olarak:
+     - ✅ Flutter web build alınacak
+     - ✅ GitHub Pages'e deploy edilecek
+     - ✅ Firestore Rules deploy edilecek
+     - ✅ Firebase Hosting'e deploy edilecek
+   
+   **Not:** `FIREBASE_TOKEN` eklenmezse, sadece GitHub Pages deploy edilir. Firebase işlemleri atlanır.
 
 3. **SEO Optimizasyonu:**
    - `web/index.html` dosyasında meta tag'leri güncelleyin

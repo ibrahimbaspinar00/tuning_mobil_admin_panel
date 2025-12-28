@@ -1,4 +1,4 @@
-name: Build and Deploy to GitHub Pages
+name: Build and Deploy
 
 on:
   push:
@@ -42,6 +42,28 @@ jobs:
       uses: actions/upload-pages-artifact@v3
       with:
         path: build/web
+
+    - name: Setup Node.js
+      if: github.ref == 'refs/heads/main'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Install Firebase CLI
+      if: github.ref == 'refs/heads/main' && secrets.FIREBASE_TOKEN != ''
+      run: npm install -g firebase-tools
+        
+    - name: Deploy Firestore Rules
+      if: github.ref == 'refs/heads/main' && secrets.FIREBASE_TOKEN != ''
+      run: |
+        firebase deploy --only firestore:rules --token ${{ secrets.FIREBASE_TOKEN }} --non-interactive
+      continue-on-error: true
+
+    - name: Deploy to Firebase Hosting
+      if: github.ref == 'refs/heads/main' && secrets.FIREBASE_TOKEN != ''
+      run: |
+        firebase deploy --only hosting --token ${{ secrets.FIREBASE_TOKEN }} --non-interactive
+      continue-on-error: true
 
   deploy:
     environment:
