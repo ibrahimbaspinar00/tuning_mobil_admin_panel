@@ -56,7 +56,11 @@ jobs:
     - name: Deploy Firestore Rules
       if: github.ref == 'refs/heads/main'
       run: |
-        firebase deploy --only firestore:rules --token ${{ secrets.FIREBASE_TOKEN }} --non-interactive
+        if [ -n "$FIREBASE_TOKEN" ]; then
+          firebase deploy --only firestore:rules --token "$FIREBASE_TOKEN" --non-interactive
+        else
+          echo "FIREBASE_TOKEN not set, skipping Firestore Rules deployment"
+        fi
       continue-on-error: true
       env:
         FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
@@ -64,7 +68,11 @@ jobs:
     - name: Deploy to Firebase Hosting
       if: github.ref == 'refs/heads/main'
       run: |
-        firebase deploy --only hosting --token ${{ secrets.FIREBASE_TOKEN }} --non-interactive
+        if [ -n "$FIREBASE_TOKEN" ]; then
+          firebase deploy --only hosting --token "$FIREBASE_TOKEN" --non-interactive
+        else
+          echo "FIREBASE_TOKEN not set, skipping Firebase Hosting deployment"
+        fi
       continue-on-error: true
       env:
         FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
