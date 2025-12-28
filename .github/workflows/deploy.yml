@@ -50,20 +50,24 @@ jobs:
         node-version: '18'
         
     - name: Install Firebase CLI
-      if: github.ref == 'refs/heads/main' && secrets.FIREBASE_TOKEN != ''
+      if: github.ref == 'refs/heads/main'
       run: npm install -g firebase-tools
         
     - name: Deploy Firestore Rules
-      if: github.ref == 'refs/heads/main' && secrets.FIREBASE_TOKEN != ''
+      if: github.ref == 'refs/heads/main'
       run: |
         firebase deploy --only firestore:rules --token ${{ secrets.FIREBASE_TOKEN }} --non-interactive
       continue-on-error: true
+      env:
+        FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
 
     - name: Deploy to Firebase Hosting
-      if: github.ref == 'refs/heads/main' && secrets.FIREBASE_TOKEN != ''
+      if: github.ref == 'refs/heads/main'
       run: |
         firebase deploy --only hosting --token ${{ secrets.FIREBASE_TOKEN }} --non-interactive
       continue-on-error: true
+      env:
+        FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
 
   deploy:
     environment:
